@@ -23,7 +23,7 @@ function util.print(value, indent, index)
   if not indent then indent = 0 end
   local posinfo = ""
   if index then posinfo = index .. ": " end
-  formatting = string.rep("  ", indent) .. posinfo
+  formatting = string.rep(" ", indent) .. posinfo
   if type(value) == "table" then
     if posinfo:len() > 0 then print(formatting) end
     util.tprint(value, indent)
@@ -171,9 +171,7 @@ function util.config(filename)
   if filesystem.exists(filename) then
     fresh = false
     -- print("read "..filename)
-    local fd = io.open(filename, "r")
-    local text = fd:read("*all")
-    fd:close()
+    local text = util.cache_read(filename)
     lines = util.split(text, "\n")
     while #lines > 0 and util.strip(lines[#lines]):len() == 0 do
       table.remove(lines, #lines)
@@ -230,13 +228,8 @@ function util.config(filename)
     if self.changed then
       table.insert(self.lines, "")
       -- print("save "..self.filename)
-      local fd = io.open(self.filename, "w")
-      if not fd then
-        assert(false, "Could not open "..self.filename.." for writing.")
-      end
       local text = util.join(self.lines, "\n")
-      fd:write(text)
-      fd:close()
+      util.cache_write(self.filename, text)
     end
     self.invalid = true
   end

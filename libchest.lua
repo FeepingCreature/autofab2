@@ -21,22 +21,20 @@ local function db_file(chest)
   return chest_dir.."/"..chest..".db"
 end
 
-local function format_slot(stack)
+local function format_slot(stack, name)
   if not stack then
     return ""
   end
   util.check_stack(stack)
-  local name = stack.name
+  local format_name = stack.name
+  if not (stack.name == name) then
+    format_name = name
+  end -- force specified name (for aliasing support)
   local count = stack.size
   local maxsize = stack.maxSize
-  if stack.override_name then
-    name = stack.override_name
-  else
-    -- only set capacity if we're not using a hacked name,
-    -- otherwise default to 1 (important! prevents aliasing collisions)
-    libcapacity.set_capacity(name, maxsize)
-  end
-  return "" .. name .. " | " .. count .. " | " .. maxsize
+  -- set capacity for original name, not aliased name
+  libcapacity.set_capacity(name, maxsize)
+  return "" .. format_name .. " | " .. count .. " | " .. maxsize
 end
 
 local function parse_slot(slot)
@@ -120,8 +118,7 @@ function libchest.get_info(name)
     if res[1] then
       -- write change
       local stack = ico.getStackInSlot(sides.front, slot)
-      stack.override_name = name -- force specified name (for aliasing support)
-      util.config_set(db_file(self.name), "slot "..slot, format_slot(stack))
+      util.config_set(db_file(self.name), "slot "..slot, format_slot(stack, name))
     end
     return table.unpack(res)
   end
@@ -136,8 +133,7 @@ function libchest.get_info(name)
     if res[1] then
       -- write change
       local stack = ico.getStackInSlot(sides.front, slot)
-      if stack then stack.override_name = name end -- force specified name (for aliasing support)
-      util.config_set(db_file(self.name), "slot "..slot, format_slot(stack))
+      util.config_set(db_file(self.name), "slot "..slot, format_slot(stack, name))
     end
     return table.unpack(res)
   end

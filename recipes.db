@@ -42,6 +42,18 @@ store 1@1 sand
 fetch 1@1 minecraft:glass
 store 1@1 glass
 
+: minecraft:glass
+fetch 1@1 sand
+drop_down 1@1 furnace:in sand
+suck 1@1 furnace:out minecraft:glass
+store 1@1 minecraft:glass
+
+: minecraft:sand
+fetch 1@1 cobblestone
+drop_down 1@1 macerator:in cobblestone
+suck 1@1 macerator:out minecraft:sand
+store 1@1 minecraft:sand
+
 : rubber
 fetch 1@1 ic2:crafting
 store 1@1 rubber
@@ -54,8 +66,18 @@ store 1@1 tin ingot
 fetch 1@1 thermalfoundation:material:128
 store 1@1 copper ingot
 
+: thermalfoundation:material:128
+fetch 1@1 crushed copper ore
+drop_down 1@1 furnace:in crushed copper ore
+suck 1@1 furnace:out thermalfoundation:material:128
+store 1@1 thermalfoundation:material:128
+
 : tin plate
 fetch 1@1 thermalfoundation:material:321
+store 1@1 tin plate
+
+: tin plate
+fetch 1@1 ic2:plate:8
 store 1@1 tin plate
 
 : coal dust
@@ -66,6 +88,11 @@ store 1@1 coal dust
 fetch 1@1 1@2 1@3 iron ingot
 fetch 1@5 1@8 stick
 craft store 1@1 minecraft:iron_pickaxe
+
+: iron axe
+fetch 1@1 1@2 1@4 iron ingot
+fetch 1@5 1@8 stick
+craft store 1@1 iron axe
 
 : iron sword
 fetch 1@1 minecraft:iron_sword
@@ -82,6 +109,10 @@ fetch 1@2 1@4 1@6 glass
 fetch 1@7 1@9 electronic circuit
 fetch 1@8 generator
 craft store 1@1 solar panel
+
+: electronic circuit
+fetch 1@1 ic2:crafting:1
+store 1@1 electronic circuit
 
 : electronic circuit
 fetch 1@1 1@2 1@3 1@7 1@8 1@9 insulated copper cable
@@ -101,8 +132,22 @@ fetch 1@8 furnace
 craft store 1@1 iron furnace
 
 : furnace
+fetch 1@1 minecraft:furnace
+store 1@1 furnace
+
+: furnace
 fetch 1@1 1@2 1@3 1@4 1@6 1@7 1@8 1@9 cobblestone
 craft store 1@1 furnace
+
+: electric furnace
+fetch 1@1 ic2:te:44
+store 1@1 electric furnace
+
+: electric furnace
+fetch 1@8 iron furnace
+fetch 1@5 electronic circuit
+fetch 1@7 1@9 redstone
+craft store 1@1 electric furnace
 
 : re-battery
 fetch 1@2 insulated tin cable
@@ -111,9 +156,17 @@ fetch 1@5 1@8 redstone
 craft store 1@1 re-battery
 
 : insulated tin cable
+fetch 1@1 Insulated Tin Cable
+store 1@1 insulated tin cable
+
+: Insulated Tin Cable
 fetch 1@1 rubber
 fetch 1@2 tin cable
-craft store 1@1 insulated tin cable
+craft store 1@1 Insulated Tin Cable
+
+: tin cable
+fetch 1@1 Tin Cable
+store 1@1 tin cable
 
 : copper cable
 fetch 1@1 Copper Cable
@@ -123,10 +176,10 @@ store 1@1 copper cable
 fetch 1@1 Insulated Copper Cable
 store 1@1 insulated copper cable
 
-: insulated copper cable
+: Insulated Copper Cable
 fetch 1@1 rubber
 fetch 1@2 copper cable
-craft store 1@1 insulated copper cable
+craft store 1@1 Insulated Copper Cable
 
 : metal former
 fetch 1@2 electronic circuit
@@ -154,11 +207,19 @@ fetch 1@5 iron ingot
 craft store 1@1 coil
 
 : basic machine casing
+fetch 1@1 ic2:resource:12
+store 1@1 basic machine casing
+
+: basic machine casing
 fetch 1@1 1@2 1@3 1@4 1@6 1@7 1@8 1@9 iron plate
 craft store 1@1 basic machine casing
 
 : iron plate
 fetch 1@1 thermalfoundation:material:32
+store 1@1 iron plate
+
+: iron plate
+fetch 1@1 ic2:plate:3
 store 1@1 iron plate
 
 : flint
@@ -172,50 +233,173 @@ fetch 1@5 basic machine casing
 fetch 1@8 electronic circuit
 craft store 1@1 macerator
 
-: copper cable
-fetch 1@1 copper ingot
-drop_down 1@1 extrude_in copper ingot
-suck 3@1 extrude_out copper cable
-store 3@1 copper cable
-
-: copper cable
-fetch 1@1 copper plate
-drop_down 1@1 cut_in copper plate
-suck 2@1 cut_out copper cable
-store 2@1 copper cable
-
 : copper plate
-fetch 1@1 copper ingot
-drop_down 1@1 roll_in copper ingot
-suck 1@1 roll_out copper plate
+fetch 1@1 ic2:plate:1
 store 1@1 copper plate
 
-: tin cable
-fetch 1@1 tin ingot
-drop_down 1@1 extrude_in tin ingot
-suck 3@1 extrude_out tin cable
-store 3@1 tin cable
+: Copper Cable
+fetch 1@1 copper ingot
+drop_down 1@1 extrude:in copper ingot
+suck 3@1 extrude:out Copper Cable
+store 3@1 Copper Cable
 
-: tin plate
-fetch 1@1 tin ingot
-drop_down 1@1 roll_in tin ingot
-suck 1@1 roll_out tin plate
-store 1@1 tin plate
+: Copper Cable
+fetch 1@1 copper plate
+drop_down 1@1 cut:in copper plate
+suck 2@1 cut:out Copper Cable
+store 2@1 Copper Cable
 
-: tin item casing
+: ic2:plate:1
+fetch 1@1 copper ingot
+drop_down 1@1 roll:in copper ingot
+suck 1@1 roll:out ic2:plate:1
+store 1@1 ic2:plate:1
+
+: Tin Cable
+fetch 1@1 tin ingot
+drop_down 1@1 extrude:in tin ingot
+suck 3@1 extrude:out Tin Cable
+store 3@1 Tin Cable
+
+: ic2:plate:8
+fetch 1@1 tin ingot
+drop_down 1@1 roll:in tin ingot
+suck 1@1 roll:out ic2:plate:8
+store 1@1 ic2:plate:8
+
+: ic2:casing:6
 fetch 1@1 tin plate
-drop_down 1@1 roll_in tin plate
-suck 2@1 roll_out tin item casing
-store 2@1 tin item casing
+drop_down 1@1 roll:in tin plate
+suck 2@1 roll:out ic2:casing:6
+store 2@1 ic2:casing:6
 
-: iron plate
+: iron item casing
+fetch 1@1 ic2:casing:3
+store 1@1 iron item casing
+
+: ic2:casing:3
+fetch 1@1 iron plate
+drop_down 1@1 roll:in iron plate
+suck 2@1 roll:out ic2:casing:3
+store 2@1 ic2:casing:3
+
+: ic2:plate:3
 fetch 1@1 iron ingot
-drop_down 1@1 roll_in iron ingot
-suck 1@1 roll_out iron plate
-store 1@1 iron plate
+drop_down 1@1 roll:in iron ingot
+suck 1@1 roll:out ic2:plate:3
+store 1@1 ic2:plate:3
 
 : batbox
 fetch 1@4 1@5 1@6 re-battery
 fetch 1@2 insulated tin cable
 fetch 1@1 1@3 1@7 1@8 1@9 planks
 craft store 1@1 batbox
+
+: ic2:dust:2
+fetch 1@1 coal
+drop_down 1@1 macerator:in coal
+suck 1@1 macerator:out ic2:dust:2
+store 1@1 ic2:dust:2
+
+: coal
+fetch 1@1 minecraft:coal
+store 1@1 coal
+
+: sticky resin
+fetch 1@1 ic2:misc_resource:4
+store 1@1 sticky resin
+
+: ic2:crafting
+fetch 1@1 sticky resin
+drop_down 1@1 extractor:in sticky resin
+suck 3@1 extractor:out ic2:crafting
+store 3@1 ic2:crafting
+
+: copper ore
+fetch 1@1 thermalfoundation:ore
+store 1@1 copper ore
+
+: tin ore
+fetch 1@1 thermalfoundation:ore:1
+store 1@1 tin ore
+
+: crushed iron ore
+fetch 1@1 ic2:crushed:2
+store 1@1 crushed iron ore
+
+: crushed tin ore
+fetch 1@1 ic2:crushed:5
+store 1@1 crushed tin ore
+
+: crushed copper ore
+fetch 1@1 ic2:crushed
+store 1@1 crushed copper ore
+
+: ic2:crushed:2
+fetch 1@1 iron ore
+drop_down 1@1 macerator:in iron ore
+suck 2@1 macerator:out ic2:crushed:2
+store 2@1 ic2:crushed:2
+
+: ic2:crushed
+fetch 1@1 copper ore
+drop_down 1@1 macerator:in copper ore
+suck 2@1 macerator:out ic2:crushed
+store 2@1 ic2:crushed
+
+: iron ore
+fetch 1@1 minecraft:iron_ore
+store 1@1 iron ore
+
+: ic2:crushed:5
+fetch 1@1 tin ore
+drop_down 1@1 macerator:in tin ore
+suck 2@1 macerator:out ic2:crushed:5
+store 2@1 ic2:crushed:5
+
+: thermalfoundation:material:129
+fetch 1@1 crushed tin ore
+drop_down 1@1 furnace:in crushed tin ore
+suck 1@1 furnace:out thermalfoundation:material:129
+store 1@1 thermalfoundation:material:129
+
+: minecraft:iron_ingot
+fetch 1@1 crushed iron ore
+drop_down 1@1 furnace:in crushed iron ore
+suck 1@1 furnace:out minecraft:iron_ingot
+store 1@1 minecraft:iron_ingot
+
+: electric alloy furnace
+fetch 1@4 1@6 electric furnace
+fetch 1@2 electronic circuit
+fetch 1@5 basic machine casing
+craft store 1@1 electric alloy furnace
+
+: treetap
+fetch 1@2 1@4 1@5 1@6 1@7 planks
+craft store 1@1 treetap
+
+: electric treetap
+fetch 1@1 treetap
+fetch 1@2 small power unit
+craft store 1@1 electric treetap
+
+: small power unit
+fetch 1@2 1@8 copper cable
+fetch 1@3 1@9 iron item casing
+fetch 1@4 re-battery
+fetch 1@5 electronic circuit
+fetch 1@6 electric motor
+craft store 1@1 small power unit
+
+: electric motor
+fetch 1@2 1@8 tin item casing
+fetch 1@4 1@6 coil
+fetch 1@5 iron ingot
+craft store 1@1 electric motor
+
+: extractor
+fetch 1@4 1@6 1@7 1@9 treetap
+fetch 1@5 basic machine casing
+fetch 1@8 electronic circuit
+craft store 1@1 extractor

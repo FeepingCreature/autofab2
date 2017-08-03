@@ -21,18 +21,14 @@ if not(#args == 0) then
   return
 end
 
-local plan = libplan.plan_create()
+local plan = libplan.plan:new()
 
 for i=1, robot.inventorySize() do
   local slot = ico.getStackInInternalSlot(i)
   if slot then
     util.check_stack(slot)
     local capacity = slot.maxSize
-    plan, error = libplan.action_store(plan, i, slot.name, slot.size, capacity)
-    if not plan then
-      print("ERR: Cannot dump "..slot.size.." "..slot.name..": "..error)
-      return
-    end
+    plan = libplan.action_store(plan, i, slot.name, slot.size, capacity)
   end
 end
 

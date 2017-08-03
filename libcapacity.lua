@@ -26,7 +26,7 @@ function libcapacity.set_capacity(id, cap)
   
   local existing = cfg:get(id)
   if not (cap == existing) then
-    cfg:set(config_file, id, tostring(cap))
+    cfg:set(id, tostring(cap))
     -- save
     cfg:close()
     cfg = util.config(config_file)
