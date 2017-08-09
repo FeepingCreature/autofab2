@@ -35,7 +35,7 @@ function util.print(value, indent, index)
 end
 
 function util.slice(str, marker)
-  local pos = str:find(marker)
+  local pos = str:find(marker, 1, true)
   if pos then
     return str:sub(1, pos - 1), str:sub(pos + marker:len(), str:len())
   else
@@ -71,7 +71,7 @@ function util.split(str, marker)
   
   local from = 1
   while true do
-    local to = str:find(marker, from)
+    local to = str:find(marker, from, true)
     -- print(from.." - "..tostring(to).." in "..str:len())
     if to then
       table.insert(res, str:sub(from, to - 1))
@@ -253,6 +253,13 @@ end
 
 function util.init()
   fscache = {}
+end
+
+local keymap = {}
+function util.get_key(info)
+  local res = keymap[info] or 0
+  keymap[info] = res + 1
+  return res
 end
 
 return util
