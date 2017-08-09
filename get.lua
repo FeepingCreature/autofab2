@@ -13,7 +13,7 @@ local args = { ... }
 
 local function help()
   print("Usage:")
-  print("  get [--dump] <count> <name>")
+  print("  get [--dump] [<count>] <name>")
   print("  Fetches an item, or crafts it if it's not available.")
 end
 
@@ -33,33 +33,62 @@ local function flush()
   cur_actions = {}
 end
 
+print("Reading recipes.")
+
+local alias_map = {}
+local function resolve_name(name)
+  if alias_map[name] then
+    return alias_map[name]
+  else
+    return name
+  end
+end
+
+local function reverse_name(name)
+  for k,v in pairs(alias_map) do
+    if v == name then return k end
+  end
+  return name
+end
+
 for k,line in ipairs(recp_lines) do
+  local full_line = line
+  if line:find("--", 1, true) then
+    line = util.slice(line, "--") -- comment
+  end
   line = util.strip(line)
   if line:len() == 0 then
+  elseif line:sub(1,1) == "=" then
+    flush()
+    aliases = util.split_sa(line:sub(2, -1), ",")
+    assert(#aliases == 2, "more than two aliases "..full_line)
+    local name, target = aliases[1], aliases[2]
+    assert(not alias_map[name], "alias defined twice: "..name)
+    alias_map[name] = target;
   elseif line:sub(1,1) == ":" then
     flush()
-    cur_name = util.strip(line:sub(2, -1))
+    cur_name = resolve_name(util.strip(line:sub(2, -1)))
   else
     -- fetch 1@1 1@5 minecraft:planks
     -- craft store 4@1 stick
     local cmds = {}
-    while true do
-      local rest
-      local cmd
-      cmd, rest = util.slice(line, " ")
+    while line:len() > 0 do
+      local cmd, rest = util.slice(line, " ")
       if cmd:find("@") then break end
       table.insert(cmds, cmd)
-      line = rest
+      line = util.strip(rest)
     end
+    assert(line:len() > 0, "bad line "..full_line)
+    
     local stats = {}
-    while true do
-      local rest
-      local stat
-      stat, rest = util.slice(line, " ")
+    while line:len() > 0 do
+      local stat, rest = util.slice(line, " ")
       if not stat:find("@") then break end
       table.insert(stats, stat)
-      line = rest
+      line = util.strip(rest)
     end
+    assert(line:len() > 0, "bad line "..full_line)
+    
     local name = util.strip(line)
     for _,cmd in ipairs(cmds) do
       for _,stat in ipairs(stats) do
@@ -74,7 +103,16 @@ for k,line in ipairs(recp_lines) do
         if slot > 3 then slot = slot + 1 end
         if slot > 7 then slot = slot + 1 end
         assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop_down" or "suck")
-        table.insert(cur_actions, { type = cmd, name = name, count = count, slot = slot })
+        
+        local obj = { type = cmd, count = count, slot = slot }
+        if cmd == "drop_down" or cmd == "suck" then
+          local location, itemname = util.slice(name, " ")
+          name = util.strip(itemname)
+          obj.location = util.strip(location)
+        end
+        obj.name = resolve_name(name)
+        
+        table.insert(cur_actions, obj)
       end
     end
   end
@@ -82,19 +120,27 @@ end
 
 flush()
 
+print("Gathering recipe effects.")
+
 -- recipes expressed in terms of gained/lost
 local recipe_effects = {}
+local recipe_occupies = {}
 for name, recipes in pairs(recipes) do
   recipe_effects[name] = {}
+  recipe_occupies[name] = {}
   for i, recipe in ipairs(recipes) do
     local effects = {}
     recipe_effects[name][i] = effects
+    local occupies = {}
+    recipe_occupies[name][i] = occupies
     for k,action in pairs(recipe.actions) do
       if action.type == "store" then
         effects[action.name] = (effects[action.name] or 0) + action.count
       elseif action.type == "fetch" then
         effects[action.name] = (effects[action.name] or 0) - action.count
-      elseif action.type == "craft" or action.type == "drop_down" or action.type == "suck" then
+      elseif action.type == "drop_down" then
+        occupies[util.slice(action.location, ":")] = true
+      elseif action.type == "craft" or action.type == "suck" then
       else
         assert(false, "unaccounted-for action type: "..action.type)
       end
@@ -137,7 +183,6 @@ end
 
 function StorageInfo.set(self, name, count)
   assert(name and count >= 0)
-  assert(self.parent, "don't set items manually on the root state")
   if not self.items then self.items = {} end
   self.items[name] = count
 end
@@ -155,7 +200,7 @@ end
 local function format_missing(missing)
   if type(missing) == "string" then return missing end
   local parts = {}
-  for k,v in pairs(missing) do table.insert(parts, ""..v.." "..k) end
+  for k,v in pairs(missing) do table.insert(parts, ""..v.." "..reverse_name(k)) end
   return util.join(parts, ", ")
 end
 
@@ -186,7 +231,6 @@ function consume(store, name, count)
   
   local children = {}
   local actions = {}
-  local outer_consumes = {}
   local missing = nil
   
   local recipe_list = recipes[name] or {}
@@ -206,10 +250,8 @@ function consume(store, name, count)
     local provision_missing = nil
     ::retry::
     local trial = StorageInfo:new(store)
-    consumes = {}
     for key, val in pairs(effects) do
       if val < 0 then
-        consumes[key] = true
         local success, subcount, missing = consume(trial, key, -val * attempt)
         if success then
           if not (success == true) then
@@ -236,8 +278,7 @@ function consume(store, name, count)
     end
     
     if attempt > 0 then
-      table.insert(actions, { name = name, index = recipe_id, count = attempt })
-      for k,_ in pairs(consumes) do outer_consumes[k] = true end
+      table.insert(actions, { id = util.get_key("step"), name = name, index = recipe_id, count = attempt })
     end
     
     trial:commit()
@@ -251,7 +292,7 @@ function consume(store, name, count)
   
   if consumed < count then
     if missing then
-      missing = merge_missing("annotate", missing, "to make "..(count - consumed).." "..name)
+      missing = merge_missing("annotate", missing, "to make "..(count - consumed).." "..reverse_name(name))
     else
       missing = {}
       missing[name] = count - consumed
@@ -260,10 +301,8 @@ function consume(store, name, count)
   end
   
   return {
-    name = name,
     children = children,
-    actions = actions,
-    consumes = outer_consumes
+    actions = actions
   }
 end
 
@@ -271,109 +310,199 @@ local dump = false
 if args[1] == "--dump" then
   dump = true
   local nargs = {}
-  for i=2,#args do nargs[i - 1] = args[i] end
+  for i=2,#args do table.insert(nargs, args[i]) end
   args = nargs
 end
 
-if not(#args >= 2) then
+if not(#args >= 1) then
   help()
   return
 end
 
-local count = tonumber(args[1])
-local name = {}
-for i=2,#args do table.insert(name, args[i]) end
-name = util.join(name, " ")
+local requests = {}
+local count = 1
+local name = ""
+for _,arg in ipairs(args) do
+  local ncount = tonumber(arg)
+  if ncount then
+    if name:len() > 0 then
+      table.insert(requests, { name = name, count = count })
+      name = ""
+    end
+    count = ncount
+  elseif name:len() > 0 then
+    name = name .. " " .. arg
+  else
+    name = arg
+  end
+end
+if name:len() > 0 then
+  table.insert(requests, { name = name, count = count })
+end
+count = nil
+name = nil
 
-local store = StorageInfo:new(StorageInfo:new())
-local tree, produced, missing = consume(store, name, count)
-if not tree then
-  print("Inputs are missing and cannot be crafted: "..format_missing(missing))
-  print("managed to make "..produced.." / "..count)
-  return
+print("Generating requirement tree.")
+
+local store = StorageInfo:new()
+
+local trees = {}
+
+for _,request in ipairs(requests) do
+  local tree, produced, missing = consume(store, request.name, request.count)
+  if not tree then
+    print("Inputs are missing and cannot be crafted: "..format_missing(missing))
+    print("managed to make "..produced.." / "..request.count)
+    return
+  end
+  if not (tree == true) then
+    table.insert(trees, tree)
+  end
 end
 
--- print("Plan tree:")
--- util.print(tree)
+-- free
+store = nil
 
-local all_action_names = {}
-local function scan_actions(action)
-  all_action_names[action.name] = true
-  for k,v in pairs(action.children) do scan_actions(v) end
+-- print("Plan trees:")
+-- util.print(trees)
+
+local Planner = {}
+function Planner:new()
+  local obj = {
+    time = 0,
+    store = StorageInfo:new(),
+    selected = {},
+    machine_busy_until = {}
+  }
+    
+  for k,v in pairs(self) do obj[k] = v end
+  obj.new = nil -- but not that one.
+  
+  return obj
 end
-scan_actions(tree)
+
+function Planner:already_done(step)
+  return self.selected[step.id]
+end
+
+function Planner:select(step, time_add)
+  self.time = self.time + time_add + 1
+  self.selected[step.id] = true
+  local effects = recipe_effects[step.name][step.index]
+  local occupies = recipe_occupies[step.name][step.index]
+  for key, val in pairs(effects) do
+    self.store:set(key, self.store:get(key) + val * step.count)
+  end
+  
+  -- TODO factor out between ready and here
+  for machine, _ in pairs(occupies) do
+    local start_after = self.time
+    if (self.machine_busy_until[machine] or self.time) > self.time then
+      start_after = self.machine_busy_until[machine]
+    end
+    self.machine_busy_until[machine] = start_after + step.count
+  end
+end
+
+-- return nil if not runnable, otherwise return the expected time until it will finish
+function Planner:ready(step)
+  if self:already_done(step) then return end -- already executed
+  local recipe = recipes[step.name][step.index]
+  local effects = recipe_effects[step.name][step.index]
+  local occupies = recipe_occupies[step.name][step.index]
+  assert(effects and occupies)
+  for key, val in pairs(effects) do
+    if val < 0 and self.store:get(key) < -val * step.count then
+      return -- not ready
+    end
+  end
+  
+  local res = 0
+  for machine, _ in pairs(occupies) do
+    local wait_to_start = 0
+    if (self.machine_busy_until[machine] or self.time) > self.time then
+      wait_to_start = wait_to_start + (self.machine_busy_until[machine] - self.time)
+    end
+    res = math.max(res, wait_to_start)
+  end
+  
+  local recipe = recipes[step.name][step.index]
+  -- TODO more detailed please
+  res = res + step.count * #recipe.actions
+  
+  return res
+end
+
+local flat_actions = {}
+local function scan(steps)
+  for _,step in ipairs(steps) do
+    for _,action in ipairs(step.actions) do
+      table.insert(flat_actions, action)
+    end
+    if #step.children > 0 then
+      scan(step.children)
+    end
+  end
+end
+scan(trees)
 
 local ordered_actions = {}
 
-local ready = {}
-function pick_action()
-  local leaves = {}
-  local exclude = {}
-  -- find all leaves with no children that aren't already ready
-  local function scan(action)
-    if #action.children > 0 then
-      for _,v in ipairs(action.children) do
-        scan(v)
-      end
-      exclude[action.name] = true
-    else
-      local safe = true
-      assert(action.consumes)
-      for _,key in pairs(action.consumes) do
-        if all_action_names[key] and not ready[key] then
-          safe = false
-        end
-      end
-      if safe then leaves[action.name] = true end
+function pick_action(planner)
+  -- find all ready (all preconditions done) and unselected actions
+  local ready = {}
+  local future_tasks = 0
+  for _,action in ipairs(flat_actions) do
+    local time_until = planner:ready(action)
+    if time_until then
+      table.insert(ready, { action = action, time_until = time_until })
+    elseif not planner:already_done(action) then
+      future_tasks = future_tasks + 1
     end
   end
-  scan(tree)
   
-  local leaf = nil
-  for k,v in pairs(leaves) do
-    if not exclude[k] then
-      leaf = k
-      break
-    end
+  if not (#ready > 0) then
+    print("No valid leaf found")
+    assert(false)
   end
-  if not leaf then
-    print("No valid leaf found.")
-    util.print(tree)
-  end
-  assert(leaf)
   
-  local function remove(action)
-    if action.name == leaf then
-      assert(#action.children == 0)
-      for _,sub_action in ipairs(action.actions) do
-        table.insert(ordered_actions, sub_action)
-      end
-      return nil
+  local selected_action = nil
+  local selected_action_time = nil
+  for _, poss in ipairs(ready) do
+    if not selected_action or poss.time_until < selected_action_time then
+      selected_action = poss.action
+      selected_action_time = poss.time_until
     end
-    
-    local new_children = {}
-    for _,child in ipairs(action.children) do
-      child = remove(child)
-      if child then table.insert(new_children, child) end
-    end
-    action.children = new_children
-    return action
   end
-  tree = remove(tree)
-  ready[leaf] = true
+  -- selected_action = ready[1].action
+  -- selected_action_time = ready[1].time_until
+  assert(selected_action)
+  
+  -- done, TODO signal more sanely
+  if future_tasks == 0 and #ready == 1 then trees = {} end
+  
+  print("Pick action "..selected_action.name.."["..selected_action.index.."]")
+  return selected_action, selected_action_time
 end
 
-while tree do
-  pick_action()
+local planner = Planner:new()
+while #trees > 0 do
+  local action, time_until = pick_action(planner)
+  planner:select(action, time_until)
+  table.insert(ordered_actions, action)
 end
 
 -- free
 all_action_names = nil
 ready = nil
 
--- print("Order:")
--- util.print(ordered_actions)
+-- print("Time: "..planner.time)
+-- os.exit()
 
+print("Order:")
+util.print(ordered_actions)
+
+print("Generating plan.")
 local plan = libplan.plan:new()
 
 for step_id, step in ipairs(ordered_actions) do
@@ -399,11 +528,11 @@ for step_id, step in ipairs(ordered_actions) do
         plan, error = libplan.action_store(plan, action.slot, action.name, action.count, libcapacity.get_capacity(action.name))
         plan = libplan.opt1(plan)
       elseif action.type == "drop_down" then
-        local location, itemname = util.slice(action.name, " ")
-        plan, error = libplan.action_drop(plan, "down", action.slot, location, itemname, action.count)
+        assert(action.location)
+        plan, error = libplan.action_drop(plan, "down", action.slot, action.location, action.name, action.count)
       elseif action.type == "suck" then
-        local location, itemname = util.slice(action.name, " ")
-        plan, error = libplan.action_suck(plan, action.slot, location, itemname, action.count)
+        assert(action.location)
+        plan, error = libplan.action_suck(plan, action.slot, action.location, action.name, action.count)
       else
         assert(false, "unknown recipe action")
       end
@@ -420,7 +549,11 @@ for _, value in ipairs({4, 8, 12, 13, 14, 15, 16}) do
 end
 
 -- TODO distribute capacity
-plan, error = libplan.action_fetch(plan, 1, name, count, count)
+for index,request in ipairs(requests) do
+  plan, error = libplan.action_fetch(plan, index, request.name, request.count, request.count)
+  assert(plan, error)
+end
+
 print("Final opt")
 libplan.final_opt = true
 plan = libplan.opt(plan)
