@@ -14,6 +14,12 @@ local plan = {}
 
 libplan.plan = plan
 
+plan.mt = { __index = plan }
+
+function disabled()
+  assert(false, "Function disabled")
+end
+
 function plan.new(self, parent)
   local length = 1
   if parent then length = parent.length + 1 end
@@ -42,8 +48,10 @@ function plan.new(self, parent)
   
   plan_id = plan_id + 1
     
-  for k,v in pairs(self) do obj[k] = v end
-  obj.new = nil -- but not that one.
+  -- for k,v in pairs(self) do obj[k] = v end
+  -- obj.new = nil -- but not that one.
+  setmetatable(obj, self.mt)
+  obj.new = disabled
   
   return obj
 end
@@ -107,8 +115,10 @@ function plan.set_item_count(self, name, count)
 end
 
 local store = {}
-for k,v in pairs(libplan.plan) do store[k] = v end
 libplan.store = store
+
+for k,v in pairs(libplan.plan) do store[k] = v end
+store.mt = { __index = store }
 
 function store.new(self, parent, item_slot, name, count, capacity)
   local obj = libplan.plan.new(self, parent)
@@ -197,8 +207,10 @@ function store.enact(self)
 end
 
 local fetch = {}
-for k,v in pairs(libplan.plan) do fetch[k] = v end
 libplan.fetch = fetch
+
+for k,v in pairs(libplan.plan) do fetch[k] = v end
+fetch.mt = { __index = fetch }
 
 function fetch.new(self, parent, item_slot, name, count)
   local obj = libplan.plan.new(self, parent)
@@ -261,8 +273,10 @@ function fetch.enact(self)
 end
 
 local craft = {}
-for k,v in pairs(libplan.plan) do craft[k] = v end
 libplan.craft = craft
+
+for k,v in pairs(libplan.plan) do craft[k] = v end
+craft.mt = { __index = craft }
 
 -- note: count is the number of items PRODUCED, not consumed!
 function craft.new(self, parent, item_slot, name, count)
@@ -304,8 +318,10 @@ function craft.enact(self)
 end
 
 local occupy = {}
-for k,v in pairs(libplan.plan) do occupy[k] = v end
 libplan.occupy = occupy
+
+for k,v in pairs(libplan.plan) do occupy[k] = v end
+occupy.mt = { __index = occupy }
 
 function occupy.new(self, parent, slot, count)
   local obj = libplan.plan.new(self, parent)
@@ -334,8 +350,10 @@ function occupy.enact(self)
 end
 
 local move = {}
-for k,v in pairs(libplan.plan) do move[k] = v end
 libplan.move = move
+
+for k,v in pairs(libplan.plan) do move[k] = v end
+move.mt = { __index = move }
 
 function move.new(self, parent, from_slot, to_slot, count)
   local obj = libplan.plan.new(self, parent)
@@ -363,8 +381,10 @@ function move.enact(self)
 end
 
 local drop = {}
-for k,v in pairs(libplan.plan) do drop[k] = v end
 libplan.drop = drop
+
+for k,v in pairs(libplan.plan) do drop[k] = v end
+drop.mt = { __index = drop }
 
 function drop.new(self, parent, item_slot, location, name, count)
   local obj = libplan.plan.new(self, parent)
@@ -406,8 +426,10 @@ function drop.enact(self)
 end
 
 local suck = {}
-for k,v in pairs(libplan.plan) do suck[k] = v end
 libplan.suck = suck
+
+for k,v in pairs(libplan.plan) do suck[k] = v end
+suck.mt = { __index = suck }
 
 function suck.new(self, parent, item_slot, location, name, count)
   local obj = libplan.plan.new(self, parent)
