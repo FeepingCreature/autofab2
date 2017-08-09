@@ -6,6 +6,7 @@ local config_file = "state.cfg"
 local libnav = {
   str = "",
   _navlog = "",
+  retry = true
 }
 
 function libnav.get_location()
@@ -30,28 +31,35 @@ local function record(str)
   libnav._navlog = libnav._navlog .. str
 end
 
+function retry_loop(fn, msg)
+  while true do
+    if fn() then break end
+    if libnav.retry then os.sleep(1) else log_assert(false, msg) end
+  end
+end
+
 local function _up()
-  log_assert(robot.up())
+  retry_loop(robot.up, "can't move up")
   record("u")
 end
 local function _down()
-  log_assert(robot.down())
+  retry_loop(robot.down, "can't move down")
   record("d")
 end
 local function _turnLeft()
-  log_assert(robot.turnLeft())
+  retry_loop(robot.turnLeft, "can't turn left")
   record("l")
 end
 local function _turnRight()
-  log_assert(robot.turnRight())
+  retry_loop(robot.turnRight, "can't turn right")
   record("r")
 end
 local function _forward()
-  log_assert(robot.forward())
+  retry_loop(robot.forward, "can't move forward")
   record("f")
 end
 local function _back()
-  log_assert(robot.back())
+  retry_loop(robot.back, "can't move back")
   record("b")
 end
 
@@ -91,7 +99,6 @@ function libnav.opt(str)
       :gsub("ul", "lu"):gsub("ur", "ru")
     if prev == str then break end
   end
-  print("opt: "..bak.." -> "..str)
   return str;
 end
 
