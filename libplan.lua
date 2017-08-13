@@ -610,55 +610,6 @@ function libplan.opt1(plan)
     return libplan.opt1(new_plan)
   end
   
-  -- search if this item was dumped via an alias
-  if plan.type == "fetch" then
-    local match = plan.parent
-    local pred = plan
-    local i = 1
-    while match do
-      local cmp_store = match
-      local cmp_fetch = match.parent
-      if cmp_fetch and cmp_store and cmp_fetch.type == "fetch" and cmp_store.type == "store"
-        and cmp_fetch.item_slot == cmp_store.item_slot
-        and cmp_store.name == plan.name
-        and cmp_fetch.count >= plan.count
-        and cmp_store.count >= plan.count
-      then
-        local replace = math.min(plan.count, math.min(cmp_fetch.count, cmp_store.count))
-        local items_still_fetched = math.max(0, cmp_fetch.count - replace)
-        local items_still_stored = math.max(0, cmp_store.count - replace)
-        local items_still_fetched_plan = math.max(0, plan.count - replace)
-        local discard_fetch = items_still_fetched == 0
-        local discard_store = items_still_stored == 0
-        local discard_plan = items_still_fetched_plan == 0
-        if discard_fetch then
-          cmp_store.parent = cmp_fetch.parent
-        else
-          cmp_fetch.count = cmp_fetch.count - replace
-        end
-        if discard_store then
-          pred.parent = cmp_store.parent
-        else
-          cmp_store.count = cmp_store.count - replace
-        end
-        local newplan
-        if discard_plan then
-          newplan = plan.parent
-        else
-          plan.count = plan.count - replace
-          newplan = plan
-        end
-        newplan:rebuild(i + 2)
-        newplan = libplan.opt1(newplan)
-        newplan = libplan.action_fetch(newplan, plan.item_slot, cmp_fetch.name, replace, libcapacity.get_capacity(cmp_fetch.name))
-        return libplan.opt1(newplan)
-      end
-      pred = match
-      match = match.parent
-      i = i + 1
-    end
-  end
-  
   -- try to find a matching store parent
   if plan.type == "fetch" then
     local match = plan.parent
