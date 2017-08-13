@@ -33,12 +33,16 @@ fd:close()
 recp_lines = util.split(text, "\n")
 local cur_name = nil
 local cur_actions = {}
+local hack_limit1 = false
 
 local function flush()
   if not cur_name then return end
   if not recipes[cur_name] then recipes[cur_name] = {} end
-  table.insert(recipes[cur_name], { actions = cur_actions })
+  local obj = { actions = cur_actions }
+  if hack_limit1 then obj.hack_limit1 = true end
+  table.insert(recipes[cur_name], obj)
   cur_actions = {}
+  hack_limit1 = false
 end
 
 print("Reading recipes.")
@@ -73,6 +77,10 @@ for k,line in ipairs(recp_lines) do
     local name, target = aliases[1], aliases[2]
     assert(not alias_map[name], "alias defined twice: "..name)
     alias_map[name] = target
+  elseif line:sub(1,3) == ":!A" then
+    flush()
+    cur_name = resolve_name(util.strip(line:sub(4, -1)))
+    hack_limit1 = true
   elseif line:sub(1,1) == ":" then
     flush()
     cur_name = resolve_name(util.strip(line:sub(2, -1)))
@@ -595,6 +603,8 @@ local function addRecipeActions(recipe_actions, name, index, count)
     end
   end
   
+  if recipe.hack_limit1 then max_factor = 1 end
+  
   -- we have to queue the recipe at most `times` times
   local times = math.ceil(count / max_factor)
   
@@ -731,7 +741,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
         store_move:exclude(action)
         store_execute:depend(store_move)
         store_move:addReadyCb(require_free_registers)
-        store_execute:addReadyCb(value_fn(15)) -- bit of cost so we hold off until we have to do it; lets us optimize storefetch into move
+        store_execute:addReadyCb(value_fn(500)) -- lot of cost so we hold off until we have to do it; lets us optimize storefetch into move
         configure_lazy_store_actions(store_move, store_execute, step)
       end
       
@@ -1073,6 +1083,9 @@ for step_id, step in ipairs(ordered_actions) do
   plan = step:addToPlan(plan)
   assert(plan)
 end
+
+ordered_actions = nil
+os.sleep(0)
 
 print("Fetching product.")
 
