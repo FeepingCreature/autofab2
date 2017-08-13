@@ -2,6 +2,7 @@ local libchest = require("libchest")
 local libplace = require("libplace")
 local libcapacity = require("libcapacity")
 local component = require("component")
+local computer = require("computer")
 local sides = require("sides")
 local robot = require("robot")
 local term = require("term")
@@ -685,11 +686,12 @@ end
 
 function libplan.enact(plan)
   print("Enact.")
-  local full_list = libplan.plan_to_list(plan)
+  local full_list, length = libplan.plan_to_list(plan)
   local list = full_list
   local i = 1
   while list do
     term.clear()
+    print(computer.freeMemory().." / "..computer.totalMemory().." | "..i.." / "..length)
     libplan.dump_list(full_list, i)
     local success, error = list.plan:enact()
     if not success then
