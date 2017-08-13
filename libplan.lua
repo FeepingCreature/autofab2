@@ -630,6 +630,7 @@ function libplan.opt1(plan)
         then
           local items_still_stored = math.max(0, match.count - plan.count)
           local items_still_fetched = math.max(0, plan.count - match.count)
+          local original_match_count = match.count
           
           -- matches us, cut match out
           local new_plan
@@ -639,8 +640,9 @@ function libplan.opt1(plan)
             new_plan = match
             match.count = items_still_stored
           end
+          
           if not (plan.item_slot == match.item_slot) then
-            new_plan = libplan.move:new(new_plan, match.item_slot, plan.item_slot, math.min(plan.count, match.count))
+            new_plan = libplan.move:new(new_plan, match.item_slot, plan.item_slot, math.min(plan.count, original_match_count))
             -- plan:dump("#")
             -- print("move "..plan.count.." "..match.name.." from "..match.item_slot.." to "..plan.item_slot)
             new_plan = libplan.opt1(new_plan)
