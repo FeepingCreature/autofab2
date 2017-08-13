@@ -4,6 +4,7 @@ local libcapacity = require("libcapacity")
 local component = require("component")
 local sides = require("sides")
 local robot = require("robot")
+local term = require("term")
 local util = require("util")
 
 local libplan = {}
@@ -104,7 +105,11 @@ function plan.get_item_count(self, name)
   while obj.parent and (not obj.items or not obj.items[name]) do
     obj = obj.parent
   end
-  return obj.items[name] or 0
+  if obj.items then
+    return obj.items[name] or 0
+  else
+    return 0
+  end
 end
 
 function plan.set_item_count(self, name, count)
@@ -317,38 +322,6 @@ function craft.enact(self)
   return true
 end
 
-local occupy = {}
-libplan.occupy = occupy
-
-for k,v in pairs(libplan.plan) do occupy[k] = v end
-occupy.mt = { __index = occupy }
-
-function occupy.new(self, parent, slot, count)
-  local obj = libplan.plan.new(self, parent)
-  obj.type = "occupy"
-  obj.slot = slot
-  obj.count = count
-  obj:rebuild()
-  return obj
-end
-
-function occupy.dump(self, marker)
-  if self.count == 0 then
-    print(marker.."Slot "..self.slot.." not occupied")
-  else
-    print(marker.."Slot "..self.slot.." occupied by "..self.count)
-  end
-end
-
-function occupy.rebuild(self, depth)
-  if depth and depth > 1 then self.parent:rebuild(depth - 1) end
-  self:reset()
-end
-
-function occupy.enact(self)
-  assert(false)
-end
-
 local move = {}
 libplan.move = move
 
@@ -356,6 +329,7 @@ for k,v in pairs(libplan.plan) do move[k] = v end
 move.mt = { __index = move }
 
 function move.new(self, parent, from_slot, to_slot, count)
+  assert(parent and from_slot and to_slot and count)
   local obj = libplan.plan.new(self, parent)
   obj.type = "move"
   obj.from_slot = from_slot
@@ -407,20 +381,25 @@ function drop.rebuild(self, depth)
 end
 
 function drop.enact(self)
-  libplace.go_to(self.location)
+  robot.select(self.item_slot)
+  
   local ico = component.inventory_controller
   local oldslot = ico.getStackInInternalSlot(self.item_slot)
   local oldslot_size = 0
   if oldslot then oldslot_size = oldslot.size end
+  if oldslot_size < self.count then
+    print("slot error: told to drop "..self.count.." from "..self.item_slot.." but only had "..oldslot_size)
+    os.exit()
+  end
   
-  robot.select(self.item_slot)
+  libplace.go_to(self.location)
   assert(robot.dropDown(self.count))
   
   local newslot = ico.getStackInInternalSlot(self.item_slot)
   local newslot_size = 0
   if newslot then newslot_size = newslot.size end
   
-  assert(newslot_size == oldslot_size - self.count)
+  assert(newslot_size == oldslot_size - self.count, "only down to "..newslot_size.." dropping "..self.count.." from "..oldslot_size)
   
   return true
 end
@@ -490,10 +469,15 @@ function libplan.action_fetch(plan, item_slot, name, count, capacity)
   return nil,"not enough items found fetching "..count.." "..name
 end
 
+function libplan.action_move(plan, from_slot, to_slot, count)
+  assert(plan and from_slot and to_slot and count)
+  return libplan.move:new(plan, from_slot, to_slot, count)
+end
+
 -- return new plan or nil,error if failed
 -- capacity override so damaged items can be stored as stack=1
 function libplan.action_store(plan, item_slot, name, count, capacity)
-  assert(name and count and capacity)
+  assert(item_slot and name and count and capacity)
   -- search through chests for a slot containing the item and not full
   -- if found, store as many items as fit
   -- if items left over, store in a free slot
@@ -503,10 +487,6 @@ end
 -- rather trivial, since it has little logic of its own because its items are assumed to be provided by fetch actions
 function libplan.action_craft(plan, slot, name, count)
   return libplan.craft:new(plan, slot, name, count)
-end
-
-function libplan.action_occupy(plan, slot, count)
-  return libplan.occupy:new(plan, slot, count)
 end
 
 function libplan.action_drop(plan, direction, slot, location, name, count)
@@ -534,7 +514,7 @@ end
 function libplan.dump_list(list, focus)
   local i = 1
   while list do
-    if not focus or (i > focus - 7 and i < focus + 7) then
+    if not focus or (i > focus - 5 and i < focus + 5) then
       if i == focus then
         list.plan:dump((i-1).."> ")
       else
@@ -572,154 +552,8 @@ local function in_craft_grid(slot)
   return false
 end
 
-libplan.final_opt = false
-
 -- optimizes just the current step of the plan!
 function libplan.opt1(plan)
-  if plan.type == "occupy" and plan.parent and plan.parent.parent then
-    local match1 = plan.parent.parent
-    local match2 = plan.parent
-    if match1.type == "fetch" and match2.type == "drop"
-      and match1.item_slot == match2.item_slot
-      and match1.count == match2.count
-      and in_craft_grid(match1.item_slot)
-      and plan.count == 0
-    then
-      match1.item_slot = plan.slot
-      match2.item_slot = plan.slot
-      plan.parent = match1.parent
-      plan:rebuild()
-      match1.parent = libplan.opt1(plan)
-      match2:rebuild(2)
-      return match2
-    end
-  end
-  
-  if plan.type == "occupy" then
-    if not plan.parent.parent then return plan.parent end
-    local active = plan.parent
-    local before = plan.parent.parent
-    if active.type == "move" then
-      if plan.slot == active.from_slot then
-        plan.count = plan.count + active.count
-      end
-    -- lose items in slot
-    elseif active.type == "store" or active.type == "drop" then
-      if plan.slot == active.item_slot then
-        plan.count = plan.count + active.count -- inverse
-      end
-    -- gain items in slot
-    elseif active.type == "craft" or active.type == "fetch" or active.type == "suck" then
-      if plan.slot == active.item_slot then
-        plan.count = plan.count - active.count -- inverse
-        assert(plan.count >= 0)
-      end
-    else
-      assert(false, "unknown occupy type "..active.type)
-    end
-    plan.parent = before
-    plan:rebuild()
-    active.parent = libplan.opt1(plan)
-    active:rebuild()
-    return active
-  end
-  
-  -- rewrite craft ops into slot 8
-  if libplan.final_opt and plan.parent
-  then
-    local cr = plan.parent
-    local st = plan
-    if cr.type == "craft" and st.type == "store"
-      and cr.item_slot == st.item_slot
-      and cr.count == st.count
-      and in_craft_grid(cr.item_slot)
-    then
-      cr.item_slot = 8
-      st.item_slot = 8
-      return libplan.opt1(plan)
-    end
-  end
-  
-  -- combine 2-craft ops
-  -- TODO generate the recipes in bulk to begin with
-  if plan.parent and plan.parent.parent and plan.parent.parent.parent
-    and plan.parent.parent.parent.parent
-    and plan.parent.parent.parent.parent.parent
-    and plan.parent.parent.parent.parent.parent.parent
-    and plan.parent.parent.parent.parent.parent.parent.parent
-  then
-    local fe1a = plan.parent.parent.parent.parent.parent.parent.parent
-    local fe1b = plan.parent.parent.parent.parent.parent.parent
-    local cr1  = plan.parent.parent.parent.parent.parent
-    local st1  = plan.parent.parent.parent.parent
-    local fe2a = plan.parent.parent.parent
-    local fe2b = plan.parent.parent
-    local cr2  = plan.parent
-    local st2  = plan
-    if    fe1a.type == "fetch" and in_craft_grid(fe1a.item_slot)
-      and fe1b.type == "fetch" and in_craft_grid(fe1b.item_slot)
-      and cr1.type == "craft" and st1.type == "store"
-      and st1.item_slot == cr1.item_slot and st1.count == cr1.count
-      and fe2a.type == "fetch" and in_craft_grid(fe2a.item_slot)
-      and fe2b.type == "fetch" and in_craft_grid(fe2b.item_slot)
-      and cr2.type == "craft" and st2.type == "store"
-      and st2.item_slot == cr2.item_slot and st2.count == cr2.count
-      and cr1.item_slot == cr2.item_slot and not(in_craft_grid(cr1.item_slot))
-      and fe1a.name == fe2a.name and fe1b.name == fe2b.name
-      and fe1a.count + fe2a.count <= math.max(libcapacity.get_capacity(fe1a.name), libcapacity.get_capacity(fe2a.name))
-      and fe1b.count + fe2b.count <= math.max(libcapacity.get_capacity(fe1b.name), libcapacity.get_capacity(fe2b.name))
-      and cr1.count + cr2.count <= math.max(libcapacity.get_capacity(cr1.name), libcapacity.get_capacity(cr2.name))
-    then
-      fe2a.count = fe2a.count + fe1a.count
-      fe2b.count = fe2b.count + fe1b.count
-      cr2.count = cr2.count + cr1.count
-      st2.count = st2.count + st1.count
-      fe2a.parent = fe1a.parent
-      plan:rebuild(5)
-      return libplan.opt1(plan)
-    end
-  end
-  
-  -- merge machine ops
-  if plan.parent and plan.parent.parent and plan.parent.parent.parent
-    and plan.parent.parent.parent.parent and plan.parent.parent.parent.parent.parent
-    and plan.parent.parent.parent.parent.parent.parent and plan.parent.parent.parent.parent.parent.parent.parent
-  then
-    -- fetch drop suck store
-    local st2 = plan
-    local su2 = plan.parent
-    local dr2 = plan.parent.parent
-    local fe2 = plan.parent.parent.parent
-    local st1 = plan.parent.parent.parent.parent
-    local su1 = plan.parent.parent.parent.parent.parent
-    local dr1 = plan.parent.parent.parent.parent.parent.parent
-    local fe1 = plan.parent.parent.parent.parent.parent.parent.parent
-    if fe1.type == "fetch" and dr1.type == "drop" and su1.type == "suck" and st1.type == "store"
-      and fe2.type == "fetch" and dr2.type == "drop" and su2.type == "suck" and st2.type == "store"
-      and fe1.item_slot == dr1.item_slot and su1.item_slot == st1.item_slot
-      and fe1.count == dr1.count and su1.count >= st1.count
-      and same_machine(dr1.location, su1.location)
-      and fe2.item_slot == dr2.item_slot and su2.item_slot == st2.item_slot
-      and fe2.count == dr2.count and su2.count >= st2.count
-      and same_machine(dr2.location, su2.location)
-      and dr1.location == dr2.location
-      -- and (fe1.name == fe2.name or st1.name == st2.name)
-      and fe1.name == fe2.name
-      and st1.item_slot == st2.item_slot
-      and fe1.count + fe2.count <= math.max(libcapacity.get_capacity(fe1.name), libcapacity.get_capacity(fe2.name))
-      and su1.count + su2.count <= math.max(libcapacity.get_capacity(st1.name), libcapacity.get_capacity(st2.name))
-      and st1.count + st2.count <= math.max(libcapacity.get_capacity(st1.name), libcapacity.get_capacity(st2.name))
-    then
-      fe2.count = fe2.count + fe1.count
-      dr2.count = dr2.count + dr1.count
-      su2.count = su2.count + su1.count
-      st2.count = st2.count + st1.count
-      fe2.parent = fe1.parent
-      plan:rebuild(5)
-      return libplan.opt1(plan)
-    end
-  end
-  
   -- move to direct placement
   if plan.type == "move" then
     if plan.parent.type == "fetch" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
@@ -751,7 +585,7 @@ function libplan.opt1(plan)
       plan.parent.count = plan.parent.count + plan.count
       plan.parent:rebuild()
       return libplan.opt1(plan.parent)
-    elseif libplan.final_opt then
+    else
       -- load many items at once
       plan.parent.count = plan.parent.count + plan.count
       plan.parent:rebuild()
@@ -883,100 +717,19 @@ function libplan.opt1(plan)
     end
   end
   
-  local function swap(plan)
-    local a, b = plan.parent, plan
-    b.parent = a.parent
-    b:rebuild()
-    a.parent = libplan.opt1(b)
-    a:rebuild()
-    return libplan.opt1(a)
-  end
-  
-  -- move sucks back beyond fetchs (always safe)
-  if libplan.final_opt and plan.parent
-    and plan.parent.type == "suck" and plan.type == "fetch"
-  then
-    return swap(plan)
-  end
-  
-  -- start machines as early as possible
-  if libplan.final_opt and plan.parent
-    and plan.parent.type == "store" and plan.type == "drop"
-  then
-    return swap(plan)
-  end
-  
-  -- start machines as early as possible
-  if libplan.final_opt and plan.parent
-    and plan.parent.type == "suck" and plan.type == "drop"
-    and not (plan.parent.item_slot == plan.item_slot)
-    and not same_machine(plan.parent.location, plan.location)
-  then
-    return swap(plan)
-  end
-  
-  -- start machines as early as possible
-  if libplan.final_opt and plan.parent
+  -- fuse move-drop into drop
+  if plan.parent
     and plan.parent.type == "move" and plan.type == "drop"
-    -- from slot is okay, since we'll still have it after the drop
-    and not (plan.parent.to_slot == plan.item_slot)
+    and plan.parent.to_slot == plan.item_slot
+    and plan.parent.count == plan.count
   then
-    return swap(plan)
-  end
-  
-  -- start machines as early as possible
-  if libplan.final_opt and plan.parent and plan.parent.parent then
-    local action = plan.parent.parent
-    local fetch = plan.parent
-    local drop = plan
-    if fetch.type == "fetch" and drop.type == "drop"
-      and fetch.count == drop.count and fetch.item_slot == drop.item_slot
-    then
-      local function move_past()
-        fetch.parent = action.parent
-        fetch:rebuild()
-        drop.parent = libplan.opt1(fetch)
-        drop:rebuild()
-        action.parent = libplan.opt1(drop)
-        action:rebuild()
-        return action
-      end
-      
-      if action.type == "store" and not(action.item_slot == fetch.item_slot) then
-        if not (action.name == fetch.name) then
-          return move_past()
-        end
-      elseif action.type == "fetch" then
-        if not (action.item_slot == fetch.item_slot) then
-          return move_past()
-        end
-      elseif action.type == "craft" then
-        if not(action.item_slot == fetch.item_slot) then
-          return move_past()
-        end
-      elseif action.type == "move" then
-        if not(action.from_slot == fetch.item_slot or action.to_slot == fetch.item_slot) then
-          return move_past()
-        end
-      elseif action.type == "suck" and not(action.item_slot == fetch.item_slot) then
-        if not same_machine(action.location, drop.location) then
-          return move_past()
-        end
-      else
-        -- print("can I move fetchdrop 4 past?")
-        -- action:dump("#")
-      end
-    end
+    plan.item_slot = plan.parent.from_slot
+    plan.parent = plan.parent.parent
+    plan:rebuild()
+    return plan
   end
   
   return plan
-end
-
-function libplan.opt(plan)
-  if not plan.parent then return plan end
-  plan.parent = libplan.opt(plan.parent)
-  plan.parent:rebuild()
-  return libplan.opt1(plan)
 end
 
 function libplan.enact(plan)
@@ -985,6 +738,7 @@ function libplan.enact(plan)
   local list = full_list
   local i = 1
   while list do
+    term.clear()
     libplan.dump_list(full_list, i)
     local success, error = list.plan:enact()
     if not success then

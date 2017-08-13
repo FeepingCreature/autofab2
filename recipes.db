@@ -37,6 +37,7 @@
 = tin plate, ic2:plate:8
 
 = electric furnace, ic2:te:44
+= solar panel, ic2:te:8
 = batbox, ic2:te:72
 = sticky resin, ic2:misc_resource:4
 
@@ -67,6 +68,8 @@
 = tin cable, Tin Cable
 = copper cable, Copper Cable
 = insulated copper cable, Insulated Copper Cable
+
+= re-battery, RE-Battery
 
 
 : iron plate
