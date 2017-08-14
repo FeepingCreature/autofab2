@@ -63,6 +63,15 @@ local function reverse_name(name)
   return name
 end
 
+local function slotcheck(slot)
+  assert((slot >= 1 and slot <= 9) or slot == 0)
+  -- match 1-9 slots to 1-16 slots
+  if slot > 3 then slot = slot + 1 end
+  if slot > 7 then slot = slot + 1 end
+  if slot == 0 then slot = 16 end -- reserved slot
+  return slot
+end
+
 for k,line in ipairs(recp_lines) do
   local full_line = line
   if line:find("--", 1, true) then
@@ -104,31 +113,47 @@ for k,line in ipairs(recp_lines) do
       line = util.strip(rest)
     end
     assert(line:len() > 0, "bad line "..full_line)
-    
+      
     local name = util.strip(line)
     for _,cmd in ipairs(cmds) do
       for _,stat in ipairs(stats) do
         local count
         local slot
         count, slot = util.slice(stat, "@")
-        count = tonumber(count)
-        slot = tonumber(slot)
-        assert(count >= 1)
-        assert(slot >= 1 and slot <= 9)
-        -- match 1-9 slots to 1-16 slots
-        if slot > 3 then slot = slot + 1 end
-        if slot > 7 then slot = slot + 1 end
-        assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop_down" or "suck")
-        
-        local obj = { type = cmd, count = count, slot = slot }
-        if cmd == "drop_down" or cmd == "suck" then
-          local location, itemname = util.slice(name, " ")
-          name = util.strip(itemname)
-          obj.location = util.strip(location)
+        if count == "" then
+          count = 1
+        else
+          count = tonumber(count)
         end
-        obj.name = resolve_name(name)
+        assert(count >= 1)
         
-        table.insert(cur_actions, obj)
+        local slots = {}
+        if slot:find(",") then
+          local slot_ids = util.split_sa(slot, ",")
+          for _, v in ipairs(slot_ids) do
+            local slot = tonumber(v)
+            slot = slotcheck(slot)
+            table.insert(slots, slot)
+          end
+        else
+          slot = tonumber(slot)
+          slot = slotcheck(slot)
+          table.insert(slots, slot)
+        end
+        
+        assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop_down" or cmd == "suck")
+        
+        for _, slot in ipairs(slots) do
+          local obj = { type = cmd, count = count, slot = slot }
+          if cmd == "drop_down" or cmd == "suck" then
+            local location, itemname = util.slice(name, " ")
+            name = util.strip(itemname)
+            obj.location = util.strip(location)
+          end
+          obj.name = resolve_name(name)
+          
+          table.insert(cur_actions, obj)
+        end
       end
     end
   end
