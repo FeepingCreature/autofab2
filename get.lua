@@ -1130,11 +1130,13 @@ end
 
 local backup = libnav.get_location()
 
-if dump then
-  libplan.dump(plan)
-else
-  libplan.enact(plan)
-end
+util.async_eat_errors(function() -- do
+  if dump then
+    libplan.dump(plan)
+  else
+    libplan.enact(plan)
+  end
+end)
 
 libnav.go_to(backup)
 libnav.flush()

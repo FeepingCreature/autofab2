@@ -143,8 +143,12 @@ end
 
 local fscache = {}
 
+local fscache_writes_suspended = false
+local fscache_dirty = {}
+
 function util.cache_read(filename)
   if fscache[filename] then return fscache[filename] end
+  -- print("cache read "..filename)
   local fd = io.open(filename, "r")
   local text = fd:read("*all")
   fd:close()
@@ -153,22 +157,69 @@ function util.cache_read(filename)
 end
 
 function util.cache_write(filename, text)
-  fscache[filename] = data
-  local fd = io.open(filename, "w")
-  assert(fd, "Could not open "..filename.." for writing.")
-  fd:write(text)
-  fd:close()
+  fscache[filename] = text
+  if fscache_writes_suspended then
+    fscache_dirty[filename] = true
+  else
+    -- print("cache write "..filename)
+    local fd = io.open(filename, "w")
+    assert(fd, "Could not open "..filename.." for writing.")
+    fd:write(text)
+    fd:close()
+  end
 end
+
+-- suspend writes until resync is called
+function util.cache_desync()
+  fscache_writes_suspended = true
+end
+
+-- go back to synchronous io
+function util.cache_resync()
+  fscache_writes_suspended = false
+  for file, _ in pairs(fscache_dirty) do
+    assert(fscache[file], "fscache dirty for "..file..", but no data cached")
+    util.cache_write(file, fscache[file])
+  end
+  fscache_dirty = {}
+end
+
+function util.async_eat_errors(fn)
+  util.cache_desync()
+  local ok, err_or_result = xpcall(fn, debug.traceback)
+  if not ok then
+    print(err_or_result)
+    print("Error: write changes to disk and exit")
+    util.cache_resync()
+    return
+  end
+  util.cache_resync()
+  return err_or_result
+end
+
+local config_translate_cache = {}
+local file_exists_cache = {}
 
 function util.config(filename)
   assert(filename)
-  local lines = {}
-  if not filesystem.exists(filename) and not(filename:sub(1,1) == "/") then
-    filename = shell.getWorkingDirectory().."/"..filename
+  
+  if not config_translate_cache[filename] then
+    if not filesystem.exists(filename) and not(filename:sub(1,1) == "/") then
+      filename = shell.getWorkingDirectory().."/"..filename
+    end
+    config_translate_cache[filename] = filename
   end
   
+  filename = config_translate_cache[filename]
+  
+  local lines = {}
+  
   local fresh
-  if filesystem.exists(filename) then
+  if not file_exists_cache[filename] then
+    file_exists_cache[filename] = { value = filesystem.exists(filename) }
+  end
+  
+  if file_exists_cache[filename].value then
     fresh = false
     -- print("read "..filename)
     local text = util.cache_read(filename)

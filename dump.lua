@@ -34,7 +34,9 @@ end
 
 local backup = libnav.get_location()
 
-libplan.enact(plan)
+util.async_eat_errors(function() -- do
+  libplan.enact(plan)
+end)
 
 libnav.go_to(backup)
 libnav.flush()
