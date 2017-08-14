@@ -24,7 +24,7 @@ local count = tonumber(args[1])
 local name = args[2]
 assert(name and count)
 
-local plan = libplan.plan_create()
+local plan, error = libplan.plan:new()
 
 -- todo split stacks
 plan, error = libplan.action_fetch(plan, 1, name, count, count)

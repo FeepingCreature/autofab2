@@ -164,7 +164,7 @@ local function exec_store(self, chest, slot, count)
     assert(self.capacity == 1) -- cannot be grouped
   end
   
-  success, error = chest:store(slot, self.item_slot, self.name, count)
+  local success, error = chest:store(slot, self.item_slot, self.name, count)
   if error then
     error = error .. " storing "..count.." "..self.name.." in "..slot
   end
@@ -319,7 +319,7 @@ function craft.enact(self)
   local newslot_size = 0
   if newslot then newslot_size = newslot.size end
   
-  assert(newslot_size == self.count)
+  assert(newslot_size == self.count, "crafting "..self.name.." failed: expected "..self.count..", got "..newslot_size)
   return true
 end
 
@@ -462,7 +462,7 @@ end
 
 function libplan.action_fetch(plan, item_slot, name, count, capacity)
   assert(name and count and capacity)
-  assert(count <= capacity)
+  assert(count <= capacity, "asked to fetch "..count.." "..name..", which exceeds cap "..capacity)
   local avail = plan:get_item_count(name)
   if avail >= count then
     return libplan.fetch:new(plan, item_slot, name, count, capacity)
@@ -571,6 +571,7 @@ function libplan.opt1(plan)
     end
     if plan.parent.type == "suck" and plan.parent.item_slot == plan.from_slot and plan.parent.count > plan.count then
       plan.parent.count = plan.parent.count - plan.count
+      local error
       plan, error = libplan.action_suck(plan.parent, plan.to_slot, plan.parent.location, plan.parent.name, plan.count)
       assert(plan, error)
       return libplan.opt1(plan)
@@ -693,7 +694,7 @@ function libplan.enact(plan)
   local i = 1
   while list do
     term.clear()
-    print(computer.freeMemory().." / "..computer.totalMemory().." | "..i.." / "..length)
+    print(computer.freeMemory().." / "..computer.totalMemory().." | "..(i - 1).." / "..(length - 1))
     libplan.dump_list(full_list, i)
     local success, error = list.plan:enact()
     if not success then

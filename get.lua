@@ -473,6 +473,7 @@ end
 local function prefetch_action_prefetch_plan_cb(self, plan)
   local step = self.step
   local factor = self.factor
+  local error
   plan, error = libplan.action_fetch(plan, self.prefetch_register, step.name, step.count * factor, libcapacity.get_capacity(step.name))
   assert(plan, error)
   return plan
@@ -556,6 +557,7 @@ end
 local function lazy_store_execute_plan_cb(self, plan)
   local step = self.store_move.step
   local lazy_register = self.store_move.lazy_register
+  local error
   plan, error = libplan.action_store(plan, lazy_register, step.name, step.count * self.factor, libcapacity.get_capacity(step.name))
   assert(plan, error)
   return plan
@@ -683,7 +685,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
       
       if step.type == "suck" then
         -- probably a bunch of waiting
-        action:addReadyCb(value_fn(50))
+        action:addReadyCb(value_fn(5000))
       end
       
       if step.type == "fetch" and worth_prefetching then
@@ -728,7 +730,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
       table.insert(recipe_actions, action)
       
       if step.type == "store" then
-        action:addReadyCb(value_fn(5000)) -- much rather do store move/store do
+        action:addReadyCb(value_fn(4000)) -- much rather do store move/store do
         assert(not (#action.applyCbs > 0), "weird action state to lazy-store")
         local store_move = Action:new(step_label.." move", {}, factor, {}, false, action.releases_grid)
         local store_execute = Action:new(step_label.." do", {}, factor, step_effects, false, false)
@@ -780,6 +782,9 @@ local function consume(store, name, count, runs)
         produced = val
         break
       end
+    end
+    if not produced then
+      util.print(effects)
     end
     assert(produced, name.." recipe does not produce "..name)
     
@@ -902,11 +907,13 @@ end
 
 local recipe_actions = {}
 
+print("Generate recipe actions: "..computer.freeMemory())
 for k, v in pairs(runs) do
   if v.attempt > 0 then
     addRecipeActions(recipe_actions, v.name, v.recipe_id, v.attempt)
   end
 end
+print("Done")
 
 -- free
 store = nil
@@ -922,7 +929,7 @@ function Model:new()
     time = 0,
     store = StorageInfo:new(),
     registers = {},
-    register_keys = {4, 8, 12, 13, 14, 15, 16},
+    register_keys = {4, 8, 12, 15, 14, 13}, -- 16 is reserved
     excludes = {}, -- actions that can't run, ever
     completes = {}, -- actions that have been selected
     location = Location.Home,
@@ -1076,7 +1083,7 @@ recipe_actions = nil
 -- end
 
 print("Generating plan.")
-local plan = libplan.plan:new()
+local plan, error = libplan.plan:new()
 assert(plan)
 
 for step_id, step in ipairs(ordered_actions) do

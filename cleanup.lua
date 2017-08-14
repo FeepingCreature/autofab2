@@ -30,7 +30,7 @@ for k,v in pairs(chestnames) do
   for i = 1, info.capacity do
     local slot = info.slots[i]
     if slot.name then
-      local plan = libplan.plan_create()
+      local plan, error = libplan.plan:new()
       plan, error = libplan.action_fetch(plan, 1, slot.name, slot.count, slot.count)
       assert(plan, error)
       libplan.enact(plan)
@@ -38,7 +38,7 @@ for k,v in pairs(chestnames) do
       local stack = ico.getStackInInternalSlot(1)
       assert(stack)
       util.check_stack(stack)
-      plan = libplan.plan_create()
+      plan = libplan.plan:new()
       plan, error = libplan.action_store(plan, 1, stack.name, stack.size, stack.maxSize)
       assert(plan, error)
       libplan.enact(plan)
