@@ -578,6 +578,18 @@ function libplan.opt1(plan)
     end
   end
   
+  local function swap()
+    local plan = plan
+    local newplan = plan.parent
+    plan.parent = plan.parent.parent
+    plan:rebuild()
+    plan = libplan.opt1(plan)
+    newplan.parent = plan
+    newplan:rebuild()
+    newplan = libplan.opt1(newplan)
+    return newplan
+  end
+  
   -- simple combination
   if plan.type == "fetch" and plan.parent.type == "fetch"
     and plan.name == plan.parent.name
@@ -600,16 +612,21 @@ function libplan.opt1(plan)
   
   -- helper for the above, swap fetch and move if easy
   if plan.type == "fetch" and plan.parent.type == "move"
-    and not(plan.parentfrom_slot == plan.item_slot or plan.parent.to_slot == plan.item_slot)
+    and not(plan.parent.from_slot == plan.item_slot or plan.parent.to_slot == plan.item_slot)
   then
-    local fetch = plan
-    local move = plan.parent
-    fetch.parent = move.parent
-    fetch:rebuild()
-    move.parent = libplan.opt1(fetch)
-    local new_plan = move
-    new_plan:rebuild()
-    return libplan.opt1(new_plan)
+    return swap()
+  end
+  
+  if plan.parent.type == "store" and plan.type == "drop"
+  then
+    return swap()
+  end
+  
+  if plan.parent.type == "suck" and plan.type == "drop"
+    and not same_machine(plan.parent.location, plan.location)
+    and not (plan.parent.item_slot == plan.item_slot)
+  then
+    return swap()
   end
   
   -- try to find a matching store parent
@@ -681,6 +698,7 @@ function libplan.opt1(plan)
     plan.item_slot = plan.parent.from_slot
     plan.parent = plan.parent.parent
     plan:rebuild()
+    plan = libplan.opt1(plan)
     return plan
   end
   
