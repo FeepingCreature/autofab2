@@ -570,43 +570,20 @@ local function in_craft_grid(slot)
   return false
 end
 
+local function swap(plan, fn)
+  if not fn then fn = libplan.opt1 end
+  local newplan = plan.parent
+  plan.parent = plan.parent.parent
+  plan:rebuild()
+  plan = fn(plan, fn)
+  newplan.parent = plan
+  newplan:rebuild()
+  newplan = fn(newplan, fn)
+  return newplan
+end
+
 -- optimizes just the current step of the plan!
 function libplan.opt1(plan)
-  -- move to direct placement
-  if plan.type == "move" then
-    if plan.parent.type == "fetch" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
-      plan.parent.item_slot = plan.to_slot
-      return plan.parent
-    end
-    if plan.parent.type == "craft" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
-      plan.parent.item_slot = plan.to_slot
-      return plan.parent
-    end
-    if plan.parent.type == "suck" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
-      plan.parent.item_slot = plan.to_slot
-      return plan.parent
-    end
-    if plan.parent.type == "suck" and plan.parent.item_slot == plan.from_slot and plan.parent.count > plan.count then
-      plan.parent.count = plan.parent.count - plan.count
-      local error
-      plan, error = libplan.action_suck(plan.parent, plan.to_slot, plan.parent.location, plan.parent.name, plan.count)
-      assert(plan, error)
-      return libplan.opt1(plan)
-    end
-  end
-  
-  local function swap()
-    local plan = plan
-    local newplan = plan.parent
-    plan.parent = plan.parent.parent
-    plan:rebuild()
-    plan = libplan.opt1(plan)
-    newplan.parent = plan
-    newplan:rebuild()
-    newplan = libplan.opt1(newplan)
-    return newplan
-  end
-  
   -- simple combination
   if plan.type == "fetch" and plan.parent.type == "fetch"
     and plan.name == plan.parent.name
@@ -631,79 +608,288 @@ function libplan.opt1(plan)
   if plan.type == "fetch" and plan.parent.type == "move"
     and not(plan.parent.from_slot == plan.item_slot or plan.parent.to_slot == plan.item_slot)
   then
-    return swap()
+    return swap(plan)
   end
   
-  if plan.parent.type == "store" and plan.type == "drop"
-  then
-    return swap()
-  end
-  
-  if plan.parent.type == "suck" and plan.type == "drop"
-    and not same_machine(plan.parent.location, plan.location)
-    and not (plan.parent.item_slot == plan.item_slot)
-  then
-    return swap()
+  -- move to direct placement
+  if plan.type == "move" then
+    if plan.parent.type == "fetch" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
+      plan.parent.item_slot = plan.to_slot
+      return plan.parent
+    end
+    if plan.parent.type == "craft" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count
+      and not in_craft_grid(plan.to_slot) -- not safe!
+    then
+      plan.parent.item_slot = plan.to_slot
+      return plan.parent
+    end
+    if plan.parent.type == "suck" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
+      plan.parent.item_slot = plan.to_slot
+      return plan.parent
+    end
+    if plan.parent.type == "suck" and plan.parent.item_slot == plan.from_slot and plan.parent.count > plan.count then
+      plan.parent.count = plan.parent.count - plan.count
+      local error
+      plan, error = libplan.action_suck(plan.parent, plan.parent.direction, plan.to_slot, plan.parent.location, plan.parent.name, plan.count)
+      assert(plan, error)
+      return libplan.opt1(plan)
+    end
   end
   
   -- try to find a matching store parent
   if plan.type == "fetch" then
     local match = plan.parent
     local pred = plan
+    local slots_written = {} -- slots that were touched by intermediate steps
     local i = 1
     while match do
-      -- can only search past fetches and stores
-      if not (match.type == "fetch" or match.type == "store" or match.type == "move") then break end
       if match.type == "move" then
-        if plan.item_slot == match.from_slot or plan.item_slot == match.to_slot then
-          -- slot collision
-          break
+        slots_written[match.to_slot] = true
+      elseif match.type == "craft" then
+        slots_written[match.item_slot] = true
+      elseif match.type == "drop" then
+        -- adds nothing to the inventory - no chance of collision
+      elseif match.type == "suck" then
+        slots_written[match.item_slot] = true
+      elseif match.type == "fetch" then
+        slots_written[match.item_slot] = true
+      elseif match.type == "store" then
+        if plan.name == match.name then
+          if slots_written[match.item_slot] then
+            -- slot was dirtied in-between
+            -- print("can't collapse; slot "..match.item_slot.." dirty")
+            -- break -- no, keep looking! may be other stores
+          else
+            local items_still_stored = math.max(0, match.count - plan.count)
+            local items_still_fetched = math.max(0, plan.count - match.count)
+            local original_match_count = match.count
+            local original_plan_count = plan.count
+            
+            -- matches us, cut match out
+            local new_plan
+            if items_still_stored == 0 then
+              new_plan = match.parent
+            else
+              new_plan = match
+              match.count = items_still_stored
+            end
+            pred.parent = new_plan
+            
+            local res
+            if items_still_fetched == 0 then
+              res = plan.parent
+            else
+              plan.count = items_still_fetched
+              res = plan
+            end
+            
+            if not (plan.item_slot == match.item_slot) then
+              res = libplan.move:new(res, match.item_slot, plan.item_slot, math.min(original_plan_count, original_match_count))
+              res = libplan.opt1(res)
+            end
+            
+            res:rebuild(i + 3)
+            return libplan.opt1(res)
+          end
         end
+        slots_written[match.item_slot] = true
       else
-        if match.type == "store"
-          and plan.name == match.name
-        then
-          local items_still_stored = math.max(0, match.count - plan.count)
-          local items_still_fetched = math.max(0, plan.count - match.count)
-          local original_match_count = match.count
-          
-          -- matches us, cut match out
-          local new_plan
-          if items_still_stored == 0 then
-            new_plan = match.parent
-          else
-            new_plan = match
-            match.count = items_still_stored
-          end
-          
-          if not (plan.item_slot == match.item_slot) then
-            new_plan = libplan.move:new(new_plan, match.item_slot, plan.item_slot, math.min(plan.count, original_match_count))
-            -- plan:dump("#")
-            -- print("move "..plan.count.." "..match.name.." from "..match.item_slot.." to "..plan.item_slot)
-            new_plan = libplan.opt1(new_plan)
-            -- libplan.dump(new_plan)
-          end
-          pred.parent = new_plan
-          
-          local res
-          if items_still_fetched == 0 then
-            res = plan.parent
-          else
-            plan.count = items_still_fetched
-            res = plan
-          end
-          res:rebuild(i + 3)
-          return libplan.opt1(res)
-        end
-        if plan.item_slot == match.item_slot then
-          -- slot collision
-          break
-        end
+        break
       end
       pred = match
       match = match.parent
       i = i + 1
     end
+  end
+  
+  return plan
+end
+
+function libplan.move_late_fusion(plan, fn)
+  if not plan.parent then return plan end
+    
+  -- sort moves to enable combining
+  if plan.parent.type == "move" and plan.type == "move"
+    and not (plan.parent.to_slot == plan.from_slot)
+    and plan.parent.to_slot > plan.to_slot
+  then
+    return swap(plan, fn)
+  end
+  
+  if plan.parent.type == "move" and plan.type == "move"
+    and plan.parent.from_slot == plan.from_slot
+    and plan.parent.to_slot == plan.to_slot
+  then
+    plan.parent.count = plan.parent.count + plan.count
+    plan.parent:rebuild()
+    return fn(plan.parent, fn)
+  end
+
+  -- do moves as late as possible
+  if plan.parent.type == "move" and (plan.type == "drop" or plan.type == "store")
+    and not (plan.parent.to_slot == plan.item_slot)
+  then
+    return swap(plan, fn)
+  end
+  if plan.parent.type == "move" and plan.type == "suck"
+    and not (plan.parent.from_slot == plan.item_slot) and not (plan.parent.to_slot == plan.item_slot)
+  then
+    return swap(plan, fn)
+  end
+  -- move to direct placement
+  if plan.parent.type == "move" then
+    if plan.type == "drop" and plan.item_slot == plan.parent.to_slot and plan.count == plan.parent.count then
+      plan.item_slot = plan.parent.from_slot
+      plan.parent = plan.parent.parent
+      plan:rebuild()
+      return fn(plan, fn)
+    end
+  end
+  return libplan.opt1(plan)
+end
+
+function libplan.opt(plan, fn)
+  local steps_bkw = {}
+  local current = plan
+  while current do
+    table.insert(steps_bkw, current)
+    current = current.parent
+  end
+  local subplan
+  for i=#steps_bkw,1,-1 do
+    local newplan = steps_bkw[i]
+    newplan.parent = subplan
+    newplan:rebuild()
+    newplan = fn(newplan, fn)
+    subplan = newplan
+  end
+  return subplan
+end
+
+function libplan.machines_reorder(plan, fn)
+  if not plan.parent then return plan end
+  
+  -- suck as late as you can
+  if plan.parent.type == "suck" and plan.type == "store"
+    and not (plan.parent.item_slot == plan.item_slot)
+  then return swap(plan, fn) end
+  if plan.parent.type == "suck" and plan.type == "move"
+    and not (plan.parent.item_slot == plan.from_slot)
+  then return swap(plan, fn) end
+  if plan.parent.type == "suck" and plan.type == "craft"
+    and not in_craft_grid(plan.parent.item_slot)
+  then return swap(plan, fn) end
+  
+  -- drop as early as you can
+  if plan.parent.type == "store" and plan.type == "drop"
+  then return swap(plan, fn) end
+  -- breaks fetch/drop grouping, causing net slowdown.
+  -- if plan.parent.type == "fetch" and plan.type == "drop"
+  --   and not (plan.parent.item_slot == plan.item_slot)
+  -- then return swap(plan, fn) end
+  if plan.parent.type == "craft" and plan.type == "drop"
+    and not in_craft_grid(plan.item_slot)
+    and not (plan.parent.item_slot == plan.item_slot)
+  then return swap(plan, fn) end
+  if plan.parent.type == "move" and plan.type == "drop"
+    and not (plan.parent.to_slot == plan.item_slot)
+  then return swap(plan, fn) end
+  
+  -- interleave machine usage
+  if plan.parent.type == "suck" and plan.type == "drop"
+    and not same_machine(plan.parent.location, plan.location)
+    and not (plan.parent.item_slot == plan.item_slot)
+  then return swap(plan, fn) end
+  
+  -- suck directly.
+  if plan.parent.type == "suck" and plan.type == "move"
+    and plan.parent.item_slot == plan.from_slot
+    and plan.parent.count >= plan.count
+  then
+    local suck = plan.parent
+    local newplan
+    if suck.count == plan.count
+    then newplan = suck.parent
+    else
+      suck.count = suck.count - plan.count
+      suck:rebuild()
+      newplan = suck
+    end
+    newplan = libplan.suck:new(newplan, plan.to_slot, suck.location, suck.direction, suck.name, plan.count)
+    return fn(newplan, fn)
+  end
+  
+  -- why?? not sure.
+  if plan.parent.type == "move" and plan.type == "move"
+    and plan.parent.to_slot == plan.from_slot
+    and plan.parent.count == plan.count
+  then
+    local newplan = plan.parent
+    newplan.to_slot = plan.to_slot
+    newplan:rebuild()
+    newplan = libplan.opt1(newplan)
+    return newplan
+  end
+  
+  return plan
+end
+
+function libplan.unused_opts(plan)
+  -- TODO evaluate which of those still make sense
+  
+  -- move stores back as far as possible
+  if plan.parent.type == "store" and plan.type == "move"
+    -- and not (plan.parent.item_slot == plan.from_slot) -- this case is fine because by def we have enough in either case
+    and not (plan.parent.item_slot == plan.to_slot)
+  then
+    return swap(plan)
+  end
+  
+  if plan.parent.type == "store" and plan.type == "craft"
+    -- store from a non-craft slot, which is not the one we craft into
+    and not in_craft_grid(plan.parent.item_slot)
+    and not (plan.parent.item_slot == plan.item_slot)
+  then
+    return swap(plan)
+  end
+  
+  if plan.parent.type == "store" and plan.type == "suck"
+    and not (plan.parent.item_slot == plan.item_slot)
+  then
+    return swap(plan)
+  end
+  
+  if plan.parent.type == "store" and plan.type == "fetch"
+    and not (plan.parent.item_slot == plan.item_slot)
+    and not (plan.parent.name == plan.name)
+  then
+    return swap(plan)
+  end
+  
+  if plan.parent.type == "move" and plan.type == "fetch"
+    and (plan.parent.to_slot == plan.item_slot) -- safe to swap, order doesn't matter
+  then
+    return swap(plan)
+  end
+  
+  
+  if plan.parent and plan.parent.parent
+    and plan.parent.parent.type == "store" and plan.parent.type == "store" and plan.type == "move"
+    and plan.parent.item_slot == plan.to_slot
+    and not (plan.parent.parent.item_slot == plan.to_slot)
+  then
+    -- B blocks on C, blocking A
+    -- A B C -> B C A
+    local A = plan.parent.parent
+    local B = plan.parent
+    local C = plan
+    B.parent = A.parent
+    B:rebuild()
+    C.parent = libplan.opt1(B)
+    A.parent = libplan.opt1(C)
+    A:rebuild()
+    A = libplan.opt1(A)
+    return A
   end
   
   -- fuse move-drop into drop

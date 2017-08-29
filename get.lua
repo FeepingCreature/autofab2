@@ -994,6 +994,10 @@ for index,request in ipairs(requests) do
   plan = libplan.opt1(plan)
 end
 
+print("Optimizing plan.")
+plan = libplan.opt(plan, libplan.move_late_fusion)
+plan = libplan.opt(plan, libplan.machines_reorder)
+
 local backup = libnav.get_location()
 
 util.async_eat_errors(function() -- do
