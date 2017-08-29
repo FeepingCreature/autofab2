@@ -94,9 +94,16 @@ function libnav.opt(str)
       :gsub("bllb", "ll"):gsub("brrb", "rr")
       :gsub("dllu", "ll"):gsub("drru", "rr")
       :gsub("ulld", "ll"):gsub("urrd", "rr")
+      :gsub("dlu", "l"):gsub("dru", "r")
+      :gsub("uld", "l"):gsub("urd", "r")
+      :gsub("dfu", "f"):gsub("dbu", "b")
+      :gsub("ufd", "f"):gsub("ubd", "b")
       :gsub("lll", "r"):gsub("rrr", "l")
       -- move all rotations down so they can cancel
       :gsub("ul", "lu"):gsub("ur", "ru")
+      :gsub("ld", "dl"):gsub("rd", "dr")
+			:gsub("frfrf", "rfr"):gsub("flflf", "lfl")
+			:gsub("frflb", "rfl"):gsub("flfrb", "lfr")
     if prev == str then break end
   end
   return str;

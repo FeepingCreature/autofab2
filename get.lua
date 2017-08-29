@@ -798,6 +798,7 @@ function Model:new()
     store = StorageInfo:new(),
     registers = {},
     register_keys = {4, 8, 12, 15, 14, 13}, -- 16 is reserved
+    register_rotate = 1, -- round robin counter
     excludes = {}, -- actions that can't run, ever
     completes = {}, -- actions that have been selected
     location = Location.Home,
@@ -805,6 +806,11 @@ function Model:new()
     machine_busy_until = {},
     grid_locked = false
   }
+  
+  -- himem
+  for i=17,robot.inventorySize() do
+    table.insert(obj.register_keys, i)
+  end
   
   for k,v in pairs(self) do obj[k] = v end
   obj.new = nil -- but not that one.
@@ -843,10 +849,27 @@ function Model:releaseMachine(k)
   self.machine_claimed[k] = nil
 end
 
+function iter_rotate(array, offset)
+  offset = ((offset - 1) % #array) + 1 -- wrap into 1..#array
+  local i = nil
+  return function() -- do
+    if not i then
+      i = offset
+    elseif i == offset then -- visit offset the second time
+      return nil
+    end
+    local res = array[i]
+    i = (i % #array) + 1
+    return res
+  end
+end
+
 function Model:claimRegister()
-  for _, v in ipairs(self.register_keys) do
+  -- round robin to reduce clashes
+  for v in iter_rotate(self.register_keys, self.register_rotate) do
     if not self.registers[v] then
       self.registers[v] = true
+      self.register_rotate = (self.register_rotate % #self.register_keys) + 1
       return v
     end
   end

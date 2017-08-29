@@ -266,7 +266,7 @@ function fetch.enact(self)
         local newslot_size = 0
         if newslot then newslot_size = newslot.size end
         
-        assert(newslot_size == oldslot_size + grab_here)
+        assert(newslot_size == oldslot_size + grab_here, "tried to grab "..grab_here.." from chest, but only got "..newslot_size.." from "..oldslot_size)
         
         count_left = count_left - grab_here
         if count_left == 0 then
@@ -722,15 +722,19 @@ function libplan.opt1(plan)
   return plan
 end
 
-function libplan.enact(plan)
-  print("Enact.")
+function libplan.enact(plan, quietly)
+  if not quietly then
+    print("Enact.")
+  end
   local full_list, length = libplan.plan_to_list(plan)
   local list = full_list
   local i = 1
   while list do
-    term.clear()
-    print(computer.freeMemory().." / "..computer.totalMemory().." | "..(i - 1).." / "..(length - 1))
-    libplan.dump_list(full_list, i)
+    if not quietly then
+      term.clear()
+      print(computer.freeMemory().." / "..computer.totalMemory().." | "..(i - 1).." / "..(length - 1))
+      libplan.dump_list(full_list, i)
+    end
     local success, error = list.plan:enact()
     if not success then
       print("Plan failed: "..error)
