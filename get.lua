@@ -2,6 +2,7 @@ local util = require("util")
 local libplan = require("libplan")
 local libnav = require("libnav")
 local libchest = require("libchest")
+local librecipe = require("librecipe")
 local libcapacity = require("libcapacity")
 local robot = require("robot")
 local component = require("component")
@@ -24,170 +25,6 @@ local Location = {
   Chests = 2,
   Machines = 3
 }
-
-local recipes = {}
-
-local fd = io.open("recipes.db", "r")
-local text = fd:read("*all")
-fd:close()
-recp_lines = util.split(text, "\n")
-local cur_name = nil
-local cur_actions = {}
-local hack_limit1 = false
-
-local function flush()
-  if not cur_name then return end
-  if not recipes[cur_name] then recipes[cur_name] = {} end
-  local obj = { actions = cur_actions }
-  if hack_limit1 then obj.hack_limit1 = true end
-  table.insert(recipes[cur_name], obj)
-  cur_actions = {}
-  hack_limit1 = false
-end
-
-print("Reading recipes.")
-
-local alias_map = {}
-local function resolve_name(name)
-  if alias_map[name] then
-    return alias_map[name]
-  else
-    return name
-  end
-end
-
-local function reverse_name(name)
-  for k,v in pairs(alias_map) do
-    if v == name then return k end
-  end
-  return name
-end
-
-local function slotcheck(slot)
-  assert((slot >= 1 and slot <= 9) or slot == 0)
-  -- match 1-9 slots to 1-16 slots
-  if slot > 3 then slot = slot + 1 end
-  if slot > 7 then slot = slot + 1 end
-  if slot == 0 then slot = 16 end -- reserved slot
-  return slot
-end
-
-for k,line in ipairs(recp_lines) do
-  local full_line = line
-  if line:find("--", 1, true) then
-    line = util.slice(line, "--") -- comment
-  end
-  line = util.strip(line)
-  if line:len() == 0 then
-  elseif line:sub(1,1) == "=" then
-    flush()
-    aliases = util.split_sa(line:sub(2, -1), ",")
-    assert(#aliases == 2, "more than two aliases "..full_line)
-    local name, target = aliases[1], aliases[2]
-    assert(not alias_map[name], "alias defined twice: "..name)
-    alias_map[name] = target
-  elseif line:sub(1,3) == ":!A" then
-    flush()
-    cur_name = resolve_name(util.strip(line:sub(4, -1)))
-    hack_limit1 = true
-  elseif line:sub(1,1) == ":" then
-    flush()
-    cur_name = resolve_name(util.strip(line:sub(2, -1)))
-  else
-    -- fetch 1@1 1@5 minecraft:planks
-    -- craft store 4@1 stick
-    local cmds = {}
-    while line:len() > 0 do
-      local cmd, rest = util.slice(line, " ")
-      if cmd:find("@") then break end
-      table.insert(cmds, cmd)
-      line = util.strip(rest)
-    end
-    assert(line:len() > 0, "bad line "..full_line)
-    
-    local stats = {}
-    while line:len() > 0 do
-      local stat, rest = util.slice(line, " ")
-      if not stat:find("@") then break end
-      table.insert(stats, stat)
-      line = util.strip(rest)
-    end
-    assert(line:len() > 0, "bad line "..full_line)
-      
-    local name = util.strip(line)
-    for _,cmd in ipairs(cmds) do
-      for _,stat in ipairs(stats) do
-        local count
-        local slot
-        count, slot = util.slice(stat, "@")
-        if count == "" then
-          count = 1
-        else
-          count = tonumber(count)
-        end
-        assert(count >= 1)
-        
-        local slots = {}
-        if slot:find(",") then
-          local slot_ids = util.split_sa(slot, ",")
-          for _, v in ipairs(slot_ids) do
-            local slot = tonumber(v)
-            slot = slotcheck(slot)
-            table.insert(slots, slot)
-          end
-        else
-          slot = tonumber(slot)
-          slot = slotcheck(slot)
-          table.insert(slots, slot)
-        end
-        
-        assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop_down" or cmd == "suck")
-        
-        for _, slot in ipairs(slots) do
-          local obj = { type = cmd, count = count, slot = slot }
-          if cmd == "drop_down" or cmd == "suck" then
-            local location, itemname = util.slice(name, " ")
-            name = util.strip(itemname)
-            obj.location = util.strip(location)
-          end
-          obj.name = resolve_name(name)
-          
-          table.insert(cur_actions, obj)
-        end
-      end
-    end
-  end
-end
-
-flush()
-
-print("Gathering recipe effects.")
-
--- recipes expressed in terms of gained/lost
-local recipe_effects = {}
-local recipe_occupies = {}
-for name, recipes in pairs(recipes) do
-  recipe_effects[name] = {}
-  recipe_occupies[name] = {}
-  for i, recipe in ipairs(recipes) do
-    local effects = {}
-    recipe_effects[name][i] = effects
-    local occupies = {}
-    recipe_occupies[name][i] = occupies
-    for k,action in pairs(recipe.actions) do
-      if action.type == "store" then
-        effects[action.name] = (effects[action.name] or 0) + action.count
-      elseif action.type == "fetch" then
-        effects[action.name] = (effects[action.name] or 0) - action.count
-      elseif action.type == "drop_down" then
-        occupies[util.slice(action.location, ":")] = true
-      elseif action.type == "craft" or action.type == "suck" then
-      else
-        assert(false, "unaccounted-for action type: "..action.type)
-      end
-    end
-  end
-end
 
 local StorageInfo = {}
 function StorageInfo.new(self, parent)
@@ -241,7 +78,7 @@ end
 local function format_missing(missing)
   if type(missing) == "string" then return missing end
   local parts = {}
-  for k,v in pairs(missing) do table.insert(parts, ""..v.." "..reverse_name(k)) end
+  for k,v in pairs(missing) do table.insert(parts, ""..v.." "..librecipe.reverse_name(k)) end
   return util.join(parts, ", ")
 end
 
@@ -329,7 +166,7 @@ function step_loc(step)
   assert(step.type)
   if step.type == "fetch" or step.type == "store" then
     return Location.Chests
-  elseif step.type == "drop_down" or step.type == "suck" then
+  elseif step.type == "drop" or step.type == "drop_down" or step.type == "suck" or step.type == "suck_up" then
     return Location.Machines
   else
     -- print("where is a "..step.type.."??")
@@ -413,12 +250,14 @@ function step_to_plan(plan, step, factor)
     assert(plan, error)
   elseif step.type == "store" then
     plan, error = libplan.action_store(plan, step.slot, step.name, step.count * factor, libcapacity.get_capacity(step.name))
-  elseif step.type == "drop_down" then
+  elseif step.type == "drop" or step.type == "drop_down" then
+    local dirmap = {drop_down = "down", drop = "forward"}
     assert(step.location)
-    plan, error = libplan.action_drop(plan, "down", step.slot, step.location, step.name, step.count * factor)
-  elseif step.type == "suck" then
+    plan, error = libplan.action_drop(plan, dirmap[step.type], step.slot, step.location, step.name, step.count * factor)
+  elseif step.type == "suck" or step.type == "suck_up" then
+    local dirmap = {suck_up = "up", suck = "forward"}
     assert(step.location)
-    plan, error = libplan.action_suck(plan, step.slot, step.location, step.name, step.count * factor)
+    plan, error = libplan.action_suck(plan, dirmap[step.type], step.slot, step.location, step.name, step.count * factor)
   else
     assert(false, "unknown recipe action")
   end
@@ -448,9 +287,9 @@ local function get_step_info(step)
     effects[step.name] = (effects[step.name] or 0) + step.count
   elseif step.type == "fetch" then
     effects[step.name] = (effects[step.name] or 0) - step.count
-  elseif step.type == "drop_down" or step.type == "suck" then
+  elseif step.type == "drop" or step.type == "drop_down" or step.type == "suck" or step.type == "suck_up" then
     machines[util.slice(step.location, ":")] = true
-  elseif step.type == "suck" or step.type == "craft" then
+  elseif step.type == "suck" or step.type == "suck_up" or step.type == "craft" then
   else
     assert(false, "unaccounted-for step type: "..step.type)
   end
@@ -604,9 +443,9 @@ end
 local function addRecipeActions(recipe_actions, name, index, count)
   -- print("add recipe actions, "..name.."["..index.."]")
   
-  local recipe = recipes[name][index]
-  local effects = recipe_effects[name][index]
-  local total_occupies = recipe_occupies[name][index]
+  local recipe = librecipe.recipes[name][index]
+  local effects = librecipe.effects[name][index]
+  local total_occupies = librecipe.occupies[name][index]
   
   local steps = recipe.actions
   
@@ -655,7 +494,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
     local items_live = 0
     
     -- claim all required resources up front, to avoid deadlocks
-    local claim_resources = Action:new(reverse_name(name).."["..index.."] claim resources", {}, factor, total_consume_effects, false, false)
+    local claim_resources = Action:new(librecipe.reverse_name(name).."["..index.."] claim resources", {}, factor, total_consume_effects, false, false)
     table.insert(recipe_actions, claim_resources)
 
     local head = claim_resources
@@ -670,7 +509,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
     
     if any_occupies then
       -- claim all required machines
-      local claim_machines = Action:new(reverse_name(name).."["..index.."] claim machines", {}, factor, {}, false, false)
+      local claim_machines = Action:new(librecipe.reverse_name(name).."["..index.."] claim machines", {}, factor, {}, false, false)
       table.insert(recipe_actions, claim_machines)
       claim_machines:depend(head)
       setup_machine_fns(claim_machines, total_occupies)
@@ -689,7 +528,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
     for i, step in ipairs(steps) do
       local step_effects, step_machines = get_step_info(step)
       local step_locks_grid = items_live == 0
-      local step_label = reverse_name(name).."["..index.."] step "..i.." "..step.type
+      local step_label = librecipe.reverse_name(name).."["..index.."] step "..i.." "..step.type
       -- print("step "..i..": "..step_label)
       -- since we claimed all resources upfront, we can pretend to have no effect
       if step.type == "fetch" then
@@ -708,7 +547,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
       local setup_wait_any_completed = setup_wait_any_completed_fn(prev_actions)
       setup_wait_any_completed(action)
       
-      if step.type == "suck" then
+      if step.type == "suck" or step.type == "suck_up" then
         -- probably a bunch of waiting
         action:addReadyCb(value_fn(5000))
       end
@@ -736,10 +575,10 @@ local function addRecipeActions(recipe_actions, name, index, count)
         configure_prefetch_actions(prefetch_action, move_action, step, factor)
       end
       
-      if step.type == "fetch" or step.type == "suck" then
+      if step.type == "fetch" or step.type == "suck" or step.type == "suck_up" then
         items_live = items_live + factor * step.count
       end
-      if step.type == "store" or step.type == "drop_down" then
+      if step.type == "store" or step.type == "drop" or step.type == "drop_down" then
         if items_live then
           items_live = items_live - factor * step.count
           assert(items_live >= 0)
@@ -755,7 +594,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
       table.insert(recipe_actions, action)
       
       if step.type == "store" then
-        action:addReadyCb(value_fn(4000)) -- much rather do store move/store do
+        action:addReadyCb(value_fn(5)) -- much rather do store move/store do
         assert(not (#action.applyCbs > 0), "weird action state to lazy-store")
         local store_move = Action:new(step_label.." move", {}, factor, {}, false, action.releases_grid)
         local store_execute = Action:new(step_label.." do", {}, factor, step_effects, false, false)
@@ -768,7 +607,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
         store_move:exclude(action)
         store_execute:depend(store_move)
         store_move:addReadyCb(require_free_registers)
-        store_execute:addReadyCb(value_fn(500)) -- lot of cost so we hold off until we have to do it; lets us optimize storefetch into move
+        store_execute:addReadyCb(value_fn(50000)) -- lot of cost so we hold off until we have to do it; lets us optimize storefetch into move
         configure_lazy_store_actions(store_move, store_execute, step)
       end
       
@@ -797,9 +636,9 @@ local function consume(store, name, count, runs)
   local children = {}
   local missing = nil
   
-  local recipe_list = recipes[name] or {}
+  local recipe_list = librecipe.recipes[name] or {}
   for recipe_id, recipe in ipairs(recipe_list) do
-    local effects = recipe_effects[name][recipe_id]
+    local effects = librecipe.effects[name][recipe_id]
     
     local produced
     for key, val in pairs(effects) do
@@ -816,6 +655,7 @@ local function consume(store, name, count, runs)
     local attempt = math.ceil((count - consumed) / produced)
     local provision_missing = nil
     ::retry::
+    local retry_attempt = attempt
     local trial = StorageInfo:new(store)
     local trial_runs = {}
     for key, val in pairs(effects) do
@@ -824,11 +664,14 @@ local function consume(store, name, count, runs)
         if not success then
           local could_consume = math.floor(subcount / -val)
           assert(could_consume < attempt)
-          attempt = could_consume
+          retry_attempt = math.min(retry_attempt, could_consume)
           provision_missing = merge_missing("and", provision_missing, missing)
-          goto retry
         end
       end
+    end
+    if retry_attempt < attempt then
+      attempt = retry_attempt
+      goto retry
     end
     
     for key, val in pairs(effects) do
@@ -866,7 +709,7 @@ local function consume(store, name, count, runs)
   
   if consumed < count then
     if missing then
-      missing = merge_missing("annotate", missing, "to make "..(count - consumed).." "..reverse_name(name))
+      missing = merge_missing("annotate", missing, "to make "..(count - consumed).." "..librecipe.reverse_name(name))
     else
       missing = {}
       missing[name] = count - consumed
@@ -897,7 +740,7 @@ for _,arg in ipairs(args) do
   local ncount = tonumber(arg)
   if ncount then
     if name:len() > 0 then
-      table.insert(requests, { name = resolve_name(name), count = count })
+      table.insert(requests, { name = librecipe.resolve_name(name), count = count })
       name = ""
     end
     count = ncount
@@ -908,7 +751,7 @@ for _,arg in ipairs(args) do
   end
 end
 if name:len() > 0 then
-  table.insert(requests, { name = resolve_name(name), count = count })
+  table.insert(requests, { name = librecipe.resolve_name(name), count = count })
 end
 count = nil
 name = nil

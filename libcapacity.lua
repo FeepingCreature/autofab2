@@ -14,7 +14,7 @@ function libcapacity.get_capacity(id)
   if res then
     res = tonumber(res)
   else
-    -- print("WARN: unknown capacity for '"..id.."', guessing 1")
+    print("WARN: unknown capacity for '"..id.."', guessing 1")
     res = 1
   end
   cache[id] = res

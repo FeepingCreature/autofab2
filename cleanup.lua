@@ -4,6 +4,7 @@ local libnav = require("libnav")
 local robot = require("robot")
 local util = require("util")
 local component = require("component")
+local librecipe = require("librecipe")
 
 util.init()
 
@@ -30,10 +31,14 @@ for k,v in pairs(chestnames) do
   for i = 1, info.capacity do
     local slot = info.slots[i]
     if slot.name then
+      local is_known = librecipe.reverse_name(slot.name, true)
+      if not is_known then
+        print("No alias defined for '"..slot.name.."'!")
+      end
       local plan, error = libplan.plan:new()
       plan, error = libplan.action_fetch(plan, 1, slot.name, slot.count, slot.count)
       assert(plan, error)
-      libplan.enact(plan)
+      libplan.enact(plan, true)
       
       local stack = ico.getStackInInternalSlot(1)
       assert(stack)
@@ -41,7 +46,7 @@ for k,v in pairs(chestnames) do
       plan = libplan.plan:new()
       plan, error = libplan.action_store(plan, 1, stack.name, stack.size, stack.maxSize)
       assert(plan, error)
-      libplan.enact(plan)
+      libplan.enact(plan, true)
     end
   end
 end

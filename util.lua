@@ -188,8 +188,8 @@ function util.async_eat_errors(fn)
   util.cache_desync()
   local ok, err_or_result = xpcall(fn, debug.traceback)
   if not ok then
-    print(err_or_result)
     print("Error: write changes to disk and exit")
+    print(err_or_result)
     util.cache_resync()
     return
   end

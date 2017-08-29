@@ -30,6 +30,7 @@ else
   update("libnav")
   update("libplace")
   update("libchest")
+  update("librecipe")
   update("libcapacity")
   update("libplan")
   update("mov")

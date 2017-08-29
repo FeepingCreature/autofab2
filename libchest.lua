@@ -26,6 +26,7 @@ local function format_slot(stack, name)
     return ""
   end
   util.check_stack(stack)
+  if not name then name = stack.name end
   local format_name = stack.name
   if not (stack.name == name) then
     format_name = name
@@ -91,7 +92,7 @@ end
 
 function libchest.get_info(name)
   local cfg = util.config(db_file(name))
-  assert(not cfg.fresh, "uninitialized chest queried")
+  assert(not cfg.fresh, "uninitialized chest queried: '"..name.."'")
   local location = cfg:get("location")
   local capacity = tonumber(cfg:get("capacity"))
   local slots = {}

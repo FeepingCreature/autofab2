@@ -361,13 +361,14 @@ libplan.drop = drop
 for k,v in pairs(libplan.plan) do drop[k] = v end
 drop.mt = { __index = drop }
 
-function drop.new(self, parent, item_slot, location, name, count)
+function drop.new(self, parent, item_slot, location, direction, name, count)
   local obj = libplan.plan.new(self, parent)
   obj.type = "drop"
   obj.item_slot = item_slot
   obj.location = location
   obj.name = name
   obj.count = count
+  obj.direction = direction
   obj:rebuild()
   return obj
 end
@@ -394,7 +395,15 @@ function drop.enact(self)
   end
   
   libplace.go_to(self.location)
-  assert(robot.dropDown(self.count))
+  
+  local dirmap = {forward=robot.drop, down=robot.dropDown}
+  local dropfn = dirmap[self.direction]
+  
+  if not dropfn(self.count) then
+    print("error: cannot drop "..self.count.." from "..self.item_slot)
+    os.exit()
+  end
+  -- assert(robot.dropDown(self.count))
   
   local newslot = ico.getStackInInternalSlot(self.item_slot)
   local newslot_size = 0
@@ -411,11 +420,12 @@ libplan.suck = suck
 for k,v in pairs(libplan.plan) do suck[k] = v end
 suck.mt = { __index = suck }
 
-function suck.new(self, parent, item_slot, location, name, count)
+function suck.new(self, parent, item_slot, location, direction, name, count)
   local obj = libplan.plan.new(self, parent)
   obj.type = "suck"
   obj.item_slot = item_slot
   obj.location = location
+  obj.direction = direction
   obj.name = name
   obj.count = count
   obj:rebuild()
@@ -445,7 +455,13 @@ function suck.enact(self)
   local remaining = self.count
   
   while remaining > 0 do 
-    robot.suck(remaining)
+    if self.direction == "forward" then
+      robot.suck(remaining)
+    elseif self.direction == "up" then
+      robot.suckUp(remaining)
+    else
+      assert(false, "unknown suck direction '"..self.direction.."'")
+    end
     
     local newslot = ico.getStackInInternalSlot(self.item_slot)
     local newslot_size = 0
@@ -491,13 +507,14 @@ function libplan.action_craft(plan, slot, name, count)
 end
 
 function libplan.action_drop(plan, direction, slot, location, name, count)
-  assert(direction == "down")
+  assert(direction == "forward" or direction == "down")
   assert(slot and location and name and count)
-  return libplan.drop:new(plan, slot, location, name, count)
+  return libplan.drop:new(plan, slot, location, direction, name, count)
 end
 
-function libplan.action_suck(plan, slot, location, name, count)
-  return libplan.suck:new(plan, slot, location, name, count)
+function libplan.action_suck(plan, direction, slot, location, name, count)
+  assert(direction == "forward" or direction == "up")
+  return libplan.suck:new(plan, slot, location, direction, name, count)
 end
 
 function libplan.plan_to_list(plan)
