@@ -46,7 +46,7 @@ local function parse_slot(slot)
       capacity = 0
     }
   end
-  
+
   local parts = util.split_sa(slot, "|")
   assert(#parts == 3, "invalid slot data")
   return {
@@ -56,23 +56,15 @@ local function parse_slot(slot)
   }
 end
 
-function libchest.define(name, location)
-  assert(name and location)
-  
-  -- add chest
-  local chestmap = util.split_so(util.config_get(chests_cfg, "chests", ""), "|")
-  assert(not chestmap[name], "Chest already defined")
-  chestmap[name] = true
-  
+function libchest.init(name, place)
   -- gonna go have a look
   local backup = libnav.get_location()
-  libplace.go_to(location)
-  util.config_set(chests_cfg, "chests", util.join_so(chestmap, "|"))
+  libplace.go_to(place)
   -- create chest file
   local ico = component.inventory_controller
   local capacity = ico.getInventorySize(sides.front)
   local cfg = util.config(db_file(name))
-  cfg:set("location", location)
+  cfg:set("location", place)
   cfg:set("capacity", capacity)
   -- read out initial state
   for i = 1, capacity do
@@ -83,6 +75,30 @@ function libchest.define(name, location)
   cfg:close()
   -- go back where we were
   libnav.go_to(backup)
+end
+
+function libchest.refresh()
+  local chestnames = libchest.list_chests()
+  for k,v in pairs(chestnames) do
+    print("Refresh "..v)
+    local info = libchest.get_info(v)
+    libchest.init(v, info.location)
+  end
+  print("Done.")
+  libnav.flush()
+end
+
+function libchest.define(name, location)
+  assert(name and location)
+
+  -- add chest
+  local chestmap = util.split_so(util.config_get(chests_cfg, "chests", ""), "|")
+  assert(not chestmap[name], "Chest already defined")
+  chestmap[name] = true
+
+  util.config_set(chests_cfg, "chests", util.join_so(chestmap, "|"))
+
+  libchest.init(name, location)
   libnav.flush()
 end
 
@@ -101,14 +117,14 @@ function libchest.get_info(name)
     slots[i] = parse_slot(info)
   end
   cfg:close()
-  
+
   obj = {
     name = name,
     location = location,
     capacity = capacity,
     slots = slots
   }
-  
+
   -- store up to count
   function obj.store(self, slot, item_slot, name, count)
     local ico = component.inventory_controller
@@ -123,7 +139,7 @@ function libchest.get_info(name)
     end
     return table.unpack(res)
   end
-  
+
   -- grab up to count
   function obj.grab(self, slot, item_slot, name, count)
     local ico = component.inventory_controller
@@ -138,7 +154,7 @@ function libchest.get_info(name)
     end
     return table.unpack(res)
   end
-  
+
   return obj
 end
 

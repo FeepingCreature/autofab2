@@ -8,6 +8,7 @@ local args = { ... }
 local function help()
   print("Usage:")
   print("  chest define <name> <location>")
+  print("  chest refresh")
 end
 
 if #args == 0 then
@@ -23,6 +24,8 @@ if command == "define" then
     return
   end
   libchest.define(args[2], args[3])
+elseif command == "refresh" then
+  libchest.refresh()
 elseif command == "store" then
   if not (#args == 1) then
     help()
