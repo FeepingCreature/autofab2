@@ -10,7 +10,7 @@ local libnav = {
 }
 
 function libnav.get_location()
-  return util.config_get(config_file, "location", "")
+  return util.config_get(config_file, "location", "")..libnav.str
 end
 
 local function log_flush()
@@ -106,6 +106,7 @@ function libnav.opt(str)
 			:gsub("frflb", "rfl"):gsub("flfrb", "lfr")
     if prev == str then break end
   end
+  -- print("opt "..bak.." => "..str)
   return str;
 end
 
@@ -127,11 +128,11 @@ function libnav.flush()
     action()
   end
   log_flush()
-  -- optimize place
+  -- optimize location
   local state = util.config(config_file)
-  local place = state:get("location", "")
-  place = libnav.opt(place)
-  state:set("location", place)
+  local location = state:get("location", "")
+  location = libnav.opt(location)
+  state:set("location", location)
   state:close()
 end
 
