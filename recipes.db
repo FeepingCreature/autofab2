@@ -19,6 +19,7 @@
 = lever, minecraft:lever
 = chest, minecraft:chest
 = seeds, minecraft:wheat_seeds
+= bucket, minecraft:bucket
 = gravel, minecraft:gravel
 = button, minecraft:stone_button
 = string, minecraft:string
@@ -53,6 +54,8 @@
 = iron pickaxe, minecraft:iron_pickaxe
 = lapis lazuli, minecraft:dye:4
 = blaze powder, minecraft:blaze_powder
+= water bucket, minecraft:water_bucket
+= nether quartz, minecraft:quartz
 = wooden button, minecraft:wooden_button
 = redstone torch, minecraft:redstone_torch
 = glowstone dust, minecraft:glowstone_dust
@@ -103,6 +106,7 @@
 = tin ore, thermalfoundation:ore:1
 = silver ore, thermalfoundation:ore:2
 = lead ore, thermalfoundation:ore:3
+= aluminium ore, thermalfoundation:ore:4
 = nickel ore, thermalfoundation:ore:5
 
 = sharpened iron plate, advanced_machines:sharp_plate
@@ -130,7 +134,10 @@
 = lapis lazuli dust, ic2:dust:9
 = pulverized lead, ic2:dust:10
 
+= nebulous heart, xreliquary:mob_ingredient:11
+
 = electrical engine, forestry:engine_electrical
+= apatite, forestry:apatite
 
 = disk drive, opencomputers:diskDrive
 = opencomputers manual, opencomputers:tool:4
@@ -177,6 +184,8 @@
 = white illumar, projectred-core:resource_item:500
 
 = inverted white fixture, projectred-illumination:inverted_fixture_light
+= white cage lamp, projectred-illumination:cage_lamp
+= inverted white cage lamp, projectred-illumination:inverted_cage_lamp
 
 = coke brick, immersiveengineering:stoneDecoration
 
@@ -185,11 +194,13 @@
 = electric rail, railcraft:rail:5
 = rebar, railcraft:rebar
 = wooden tie, railcraft:tie
+= stone tie, railcraft:tie:1
 = track parts, railcraft:track_parts
 = wooden railbed, railcraft:railbed
 = stone railbed, railcraft:railbed:1
 = electric track, railcraft:track_flex_electric
 = creosote bottle, railcraft:fluid_bottle_creosote
+= bag of concrete, railcraft:concrete
 = booster track kit, Booster Track Kit
 = transition track kit, Transition Track Kit
 = railcraft iron plate, railcraft:plate
@@ -239,6 +250,10 @@ craft store 4@1 stick
 : crafting table
 fetch @1 @2 @4 @5 planks
 craft store @0 crafting table
+
+: bucket
+fetch @4,6,8 iron ingot
+craft store @0 bucket
 
 : lever
 fetch @1 stick
@@ -965,6 +980,27 @@ fetch @2 @4 @6 @8 steel ingot
 fetch @5 iron ingot
 craft store @0 steel gear
 
+: carpenter
+fetch @1,3,4,6,7,9 bronze ingot
+fetch @2,8 glass
+fetch @5 sturdy casing
+craft store @0 carpenter
+
+: sturdy casing
+fetch @1,2,3,4,6,7,8,9 bronze ingot
+craft store @0 sturdy casing
+
+: stone tie
+fetch @1 water bucket
+fetch 2@2 bag of concrete
+fetch @3 rebar
+use @1 carpenter:water_in water bucket
+drop 2@2 carpenter:in bag of concrete
+drop @3 carpenter:in rebar
+suck @4 carpenter:out stone tie
+store @1 bucket
+store @4 stone tie
+
 -- computercraft items
 
 : computer case tier1
@@ -1498,6 +1534,12 @@ fetch @7,9 circuit plate
 fetch @8 conductive plate
 craft store @0 white cage lamp
 
+: inverted white cage lamp
+fetch @2,4,6 iron bars
+fetch @5 white illumar
+fetch @7,9 circuit plate
+fetch @8 cathode
+craft store @0 inverted white cage lamp
 
 : circuit plate
 fetch @1 granite
@@ -1730,5 +1772,19 @@ craft store @0 charge meter
 fetch @1,2,3 railcraft iron plate
 fetch @4,6,7,8,9 rebar
 craft store 6@0 wire support frame
+
+: bag of concrete
+fetch @1,5 gravel
+fetch @2,4 nether quartz
+craft store 2@0 bag of concrete
+
+: stone railbed
+fetch @1,2,4,5 stone tie
+craft store @0 stone railbed
+
+: water bucket
+fetch @1 bucket
+use_down @1 water:in bucket
+store @1 water bucket
 
 -- end
