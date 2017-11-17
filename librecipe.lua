@@ -82,7 +82,7 @@ for k,line in ipairs(recp_lines) do
       line = util.strip(rest)
     end
     assert(line:len() > 0, "bad line "..full_line)
-    
+
     local stats = {}
     while line:len() > 0 do
       local stat, rest = util.slice(line, " ")
@@ -91,7 +91,7 @@ for k,line in ipairs(recp_lines) do
       line = util.strip(rest)
     end
     assert(line:len() > 0, "bad line "..full_line)
-      
+
     local name = util.strip(line)
     for _,cmd in ipairs(cmds) do
       for _,stat in ipairs(stats) do
@@ -104,7 +104,7 @@ for k,line in ipairs(recp_lines) do
           count = tonumber(count)
         end
         assert(count >= 1)
-        
+
         local slots = {}
         if slot:find(",") then
           local slot_ids = util.split_sa(slot, ",")
@@ -118,18 +118,21 @@ for k,line in ipairs(recp_lines) do
           slot = slotcheck(slot)
           table.insert(slots, slot)
         end
-        
-        assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop" or cmd == "drop_down" or cmd == "suck" or cmd == "suck_up")
-        
+
+        assert(cmd == "fetch" or cmd == "store" or cmd == "craft" or cmd == "drop" or cmd == "drop_down" or cmd == "suck" or cmd == "suck_up" or cmd == "use" or cmd == "use_down" or cmd == "use_up")
+
         for _, slot in ipairs(slots) do
           local obj = { type = cmd, count = count, slot = slot }
-          if cmd == "drop" or cmd == "drop_down" or cmd == "suck" or cmd == "suck_up" then
+          local drop_cmd = cmd == "drop" or cmd == "drop_down"
+          local suck_cmd = cmd == "suck" or cmd == "suck_up"
+          local use_cmd = cmd == "use" or cmd == "use_down" or cmd == "use_up"
+          if drop_cmd or suck_cmd or use_cmd then
             local location, itemname = util.slice(name, " ")
             name = util.strip(itemname)
             obj.location = util.strip(location)
           end
           obj.name = librecipe.resolve_name(name)
-          
+
           table.insert(cur_actions, obj)
         end
       end
@@ -152,6 +155,12 @@ for name, recipes in pairs(librecipe.recipes) do
     librecipe.effects[name][i] = effects
     local occupies = {}
     librecipe.occupies[name][i] = occupies
+    local function suck_type(str)
+      return str == "suck" or str == "suck_up"
+    end
+    local function use_type(str)
+      return str == "use" or str == "use_up" or str == "use_down"
+    end
     for k,action in pairs(recipe.actions) do
       if action.type == "store" then
         effects[action.name] = (effects[action.name] or 0) + action.count
@@ -159,7 +168,7 @@ for name, recipes in pairs(librecipe.recipes) do
         effects[action.name] = (effects[action.name] or 0) - action.count
       elseif action.type == "drop" or action.type == "drop_down" then
         occupies[util.slice(action.location, ":")] = true
-      elseif action.type == "craft" or action.type == "suck" or action.type == "suck_up" then
+      elseif action.type == "craft" or suck_type(action.type) or use_type(action.type) then
       else
         assert(false, "unaccounted-for action type: "..action.type)
       end

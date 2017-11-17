@@ -47,7 +47,7 @@ function StorageInfo.new(self, parent)
       end
     end
   end
-  obj.new = nil -- but unset 
+  obj.new = nil -- but unset
   return obj
 end
 
@@ -99,7 +99,7 @@ Action.mt = { __index = Action }
 function Action:new(label, steps, factor, effects, locks_grid, releases_grid)
   if not steps then steps = {} end
   assert(type(effects) == "table")
-  
+
   local obj = {
     id = util.get_key("action"),
     label = label,
@@ -114,12 +114,12 @@ function Action:new(label, steps, factor, effects, locks_grid, releases_grid)
     planCb = nil,
     factor = factor
   }
-  
+
   setmetatable(obj, self.mt)
   obj.new = disabled
-  
+
   obj:exclude(obj) -- action can't run twice
-  
+
   return obj
 end
 
@@ -149,11 +149,11 @@ end
 function Action:reason(model)
   if model:completed(self) then return "is done" end
   if model:excluded(self) then return "is excluded" end
-  
+
   for _,action in ipairs(self.depends) do
     if not model:completed(action) then return "waits on "..action.label end
   end
-  
+
   for key, val in pairs(self.effects) do
     if val < 0 and model.store:get(key) < -val * self.factor then
       return "needs "..key -- not enough material
@@ -164,9 +164,12 @@ end
 
 function step_loc(step)
   assert(step.type)
+  local drop_type = step.type == "drop" or step.type == "drop_down"
+  local suck_type = step.type == "suck" or step.type == "suck_up"
+  local use_type = step.type == "use" or step.type == "use_up" or step.type == "use_down"
   if step.type == "fetch" or step.type == "store" then
     return Location.Chests
-  elseif step.type == "drop" or step.type == "drop_down" or step.type == "suck" or step.type == "suck_up" then
+  elseif drop_type or suck_type or use_type then
     return Location.Machines
   else
     -- print("where is a "..step.type.."??")
@@ -184,31 +187,31 @@ end
 function Action:ready(model)
   if model:excluded(self) then return false end
   if self.locks_grid and model.grid_locked then return false end
-  
+
   for _,action in ipairs(self.depends) do
     if not model:completed(action) then return false end
   end
-  
+
   for key, val in pairs(self.effects) do
     if val < 0 and model.store:get(key) < -val * self.factor then
       return false -- not enough material
     end
   end
-  
+
   local res = 0
-  
+
   for k, cb in pairs(self.readyCbs) do
     local cb_res = cb(self, model)
     if not cb_res then return false end
     res = res + cb_res
   end
-  
+
   if #self.steps > 0 then
     local model_loc = model.location
     local first_step = self.steps[1]
     res = res + move_cost(model_loc, step_loc(first_step))
   end
-  
+
   return res
 end
 
@@ -216,7 +219,7 @@ function Action:applyToModel(model)
   for _, cb in ipairs(self.applyCbs) do
     cb(self, model)
   end
-  
+
   if self.locks_grid then
     assert(not model.grid_locked)
     model.grid_locked = true
@@ -225,15 +228,15 @@ function Action:applyToModel(model)
     assert(model.grid_locked)
     model.grid_locked = false
   end
-  
+
   for _,action in ipairs(self.excludes) do
     model:exclude(action)
   end
-  
+
   for key, val in pairs(self.effects) do
     model.store:set(key, model.store:get(key) + val * self.factor)
   end
-  
+
   if #self.steps > 0 then
     local last_step = self.steps[#self.steps]
     model.location = step_loc(last_step)
@@ -258,6 +261,11 @@ function step_to_plan(plan, step, factor)
     local dirmap = {suck_up = "up", suck = "forward"}
     assert(step.location)
     plan, error = libplan.action_suck(plan, dirmap[step.type], step.slot, step.location, step.name, step.count * factor)
+  elseif step.type == "use" or step.type == "use_up" or step.type == "use_down" then
+    local dirmap = {use_up = "up", use_down = "down", use = "forward"}
+    assert(step.location)
+    assert(factor == 1)
+    plan, error = libplan.action_use(plan, dirmap[step.type], step.slot, step.location, step.name, step.count * factor)
   else
     assert(false, "unknown recipe action")
   end
@@ -273,7 +281,7 @@ function Action:addToPlan(plan)
     plan = libplan.opt1(plan)
     return plan
   end
-  
+
   for _,step in ipairs(self.steps) do
     plan = step_to_plan(plan, step, self.factor)
     plan = libplan.opt1(plan)
@@ -283,13 +291,16 @@ end
 
 local function get_step_info(step)
   local effects, machines = {}, {}
+  local drop_type = step.type == "drop" or step.type == "drop_down"
+  local suck_type = step.type == "suck" or step.type == "suck_up"
+  local use_type = step.type == "use" or step.type == "use_up" or step.type == "use_down"
   if step.type == "store" then
     effects[step.name] = (effects[step.name] or 0) + step.count
   elseif step.type == "fetch" then
     effects[step.name] = (effects[step.name] or 0) - step.count
-  elseif step.type == "drop" or step.type == "drop_down" or step.type == "suck" or step.type == "suck_up" then
+  elseif drop_type or suck_type or use_type then
     machines[util.slice(step.location, ":")] = true
-  elseif step.type == "suck" or step.type == "suck_up" or step.type == "craft" then
+  elseif step.type == "craft" then
   else
     assert(false, "unaccounted-for step type: "..step.type)
   end
@@ -361,10 +372,10 @@ local function configure_prefetch_actions(prefetch_action, move_action, step, fa
   prefetch_action.step = step
   prefetch_action.factor = factor
   move_action.prefetch_action = prefetch_action
-  
+
   prefetch_action:addApplyCb(prefetch_action_claim_register_cb)
   prefetch_action:setPlanCb(prefetch_action_prefetch_plan_cb)
-  
+
   move_action:addApplyCb(prefetch_move_action_release_register_cb)
   move_action:setPlanCb(prefetch_move_action_plan_cb)
 end
@@ -432,25 +443,25 @@ function configure_lazy_store_actions(store_move, store_execute, step)
   store_move.store_execute = store_execute
   store_move.step = step
   store_execute.store_move = store_move
-  
+
   store_move:addApplyCb(lazy_store_move_apply_cb)
   store_move:setPlanCb(lazy_store_move_plan_cb)
-  
+
   store_execute:addApplyCb(lazy_store_execute_release_lazy_register_cb)
   store_execute:setPlanCb(lazy_store_execute_plan_cb)
 end
 
 local function addRecipeActions(recipe_actions, name, index, count)
   -- print("add recipe actions, "..name.."["..index.."]")
-  
+
   local recipe = librecipe.recipes[name][index]
   local effects = librecipe.effects[name][index]
   local total_occupies = librecipe.occupies[name][index]
-  
+
   local steps = recipe.actions
-  
+
   local max_factor = count -- factor we can multiply the recipe by
-  
+
   local num_fetchs = 0
   for key, val in pairs(effects) do
     if val < 0 then num_fetchs = num_fetchs + 1 end
@@ -468,12 +479,12 @@ local function addRecipeActions(recipe_actions, name, index, count)
       max_factor = math.min(max_factor, factor)
     end
   end
-  
+
   if recipe.hack_limit1 then max_factor = 1 end
-  
+
   -- we have to queue the recipe at most `times` times
   local times = math.ceil(count / max_factor)
-  
+
   local total_consume_effects, total_produce_effects = {}, {}
   for key, val in pairs(effects) do
     if val < 0 then
@@ -482,31 +493,31 @@ local function addRecipeActions(recipe_actions, name, index, count)
       total_produce_effects[key] = val
     end
   end
-  
+
   for _ = 1,times do
     local factor = math.min(count, max_factor)
     -- print(name.."["..index.."]: "..factor.." of "..count)
     count = count - factor
-    
+
     -- number of items fetched into the 3x3 craftgrid
     -- if this is 0, we can only run if the craftgrid is actually empty
     -- note that this blocks the FETCH, not the PREFETCH!
     local items_live = 0
-    
+
     -- claim all required resources up front, to avoid deadlocks
     local claim_resources = Action:new(librecipe.reverse_name(name).."["..index.."] claim resources", {}, factor, total_consume_effects, false, false)
     table.insert(recipe_actions, claim_resources)
 
     local head = claim_resources
-    
+
     local any_occupies = false
     for _, _ in pairs(total_occupies) do
       any_occupies = true
       break
     end
-    
+
     local worth_prefetching = any_occupies -- only prefetch if we're going to go to machines
-    
+
     if any_occupies then
       -- claim all required machines
       local claim_machines = Action:new(librecipe.reverse_name(name).."["..index.."] claim machines", {}, factor, {}, false, false)
@@ -515,7 +526,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
       setup_machine_fns(claim_machines, total_occupies)
       head = claim_machines
     end
-    
+
     local last_machine_action = {}
     for i, step in ipairs(steps) do
       local step_effects, step_machines = get_step_info(step)
@@ -523,7 +534,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
         last_machine_action[k] = i
       end
     end
-    
+
     local prev_actions = { head }
     for i, step in ipairs(steps) do
       local step_effects, step_machines = get_step_info(step)
@@ -536,45 +547,45 @@ local function addRecipeActions(recipe_actions, name, index, count)
       end
       local action = Action:new(step_label, { step }, factor, step_effects, step_locks_grid)
       local step_actions = { action }
-      
+
       for k, _ in pairs(total_occupies) do
         if i == last_machine_action[k] then
           assert(not (step.type == "fetch" or step.type == "store"))
           setup_free_machine(action, k)
         end
       end
-      
+
       local setup_wait_any_completed = setup_wait_any_completed_fn(prev_actions)
       setup_wait_any_completed(action)
-      
+
       if step.type == "suck" or step.type == "suck_up" then
         -- probably a bunch of waiting
         action:addReadyCb(value_fn(5000))
       end
-      
+
       if step.type == "fetch" and worth_prefetching then
         assert(items_live)
         -- can't start a new fetch-drop sequence if another sequence is already running
         if items_live == 0 then action:addReadyCb(crafting_grid_available) end
-        
+
         local prefetch_action = Action:new(step_label.." prefetch", {}, factor, {}, false, false)
         action:exclude(prefetch_action)
         prefetch_action:exclude(action)
         prefetch_action:depend(claim_resources)
         table.insert(recipe_actions, prefetch_action)
-        
+
         prefetch_action:addReadyCb(require_free_registers)
-        
+
         local move_action = Action:new(step_label.." move", {}, factor, {}, step_locks_grid)
         action:exclude(move_action) -- prevent it from waiting forever
         move_action:depend(prefetch_action)
         setup_wait_any_completed(move_action)
         table.insert(step_actions, move_action)
         table.insert(recipe_actions, move_action)
-        
+
         configure_prefetch_actions(prefetch_action, move_action, step, factor)
       end
-      
+
       if step.type == "fetch" or step.type == "suck" or step.type == "suck_up" then
         items_live = items_live + factor * step.count
       end
@@ -585,14 +596,14 @@ local function addRecipeActions(recipe_actions, name, index, count)
         end
       end
       if step.type == "craft" then items_live = nil end -- cannot be known
-      
+
       -- at the end, the craftgrid must be empty
       local last_step = i == #steps
       local grid_now_empty = items_live == 0
       if last_step then assert(not items_live or grid_now_empty, "last step, but grid definitely still occupied") end
       action.releases_grid = last_step or grid_now_empty
       table.insert(recipe_actions, action)
-      
+
       if step.type == "store" then
         action:addReadyCb(value_fn(5)) -- much rather do store move/store do
         assert(not (#action.applyCbs > 0), "weird action state to lazy-store")
@@ -610,7 +621,7 @@ local function addRecipeActions(recipe_actions, name, index, count)
         store_execute:addReadyCb(value_fn(50000)) -- lot of cost so we hold off until we have to do it; lets us optimize storefetch into move
         configure_lazy_store_actions(store_move, store_execute, step)
       end
-      
+
       prev_actions = step_actions
     end
   end
@@ -630,16 +641,16 @@ local function consume(store, name, count, runs)
   else
     consumed = existing
   end
-  
+
   store:set(name, 0)
-  
+
   local children = {}
   local missing = nil
-  
+
   local recipe_list = librecipe.recipes[name] or {}
   for recipe_id, recipe in ipairs(recipe_list) do
     local effects = librecipe.effects[name][recipe_id]
-    
+
     local produced
     for key, val in pairs(effects) do
       if val > 0 and key == name then
@@ -651,7 +662,7 @@ local function consume(store, name, count, runs)
       util.print(effects)
     end
     assert(produced, name.." recipe does not produce "..name)
-    
+
     local attempt = math.ceil((count - consumed) / produced)
     local provision_missing = nil
     ::retry::
@@ -673,17 +684,17 @@ local function consume(store, name, count, runs)
       attempt = retry_attempt
       goto retry
     end
-    
+
     for key, val in pairs(effects) do
       if val > 0 then
         trial:set(key, trial:get(key) + val * attempt)
       end
     end
-    
+
     if provision_missing then
       missing = merge_missing("or", missing, provision_missing)
     end
-    
+
     trial:commit()
     for k,v in pairs(trial_runs) do
       if runs[k] then
@@ -692,21 +703,21 @@ local function consume(store, name, count, runs)
         runs[k] = v
       end
     end
-    
+
     local key = name.." - "..recipe_id
     if runs[key] then
       runs[key].attempt = runs[key].attempt + attempt
     else
       runs[key] = { name = name, recipe_id = recipe_id, attempt = attempt }
     end
-    
+
     local actually_consume = math.min(count - consumed, attempt * produced)
     consumed = consumed + actually_consume
     store:set(name, store:get(name) - actually_consume)
-    
+
     if consumed == count then break end
   end
-  
+
   if consumed < count then
     if missing then
       missing = merge_missing("annotate", missing, "to make "..(count - consumed).." "..librecipe.reverse_name(name))
@@ -716,7 +727,7 @@ local function consume(store, name, count, runs)
     end
     return nil, consumed, missing
   end
-  
+
   return true, consumed, nil
 end
 
@@ -806,15 +817,15 @@ function Model:new()
     machine_busy_until = {},
     grid_locked = false
   }
-  
+
   -- himem
   for i=17,robot.inventorySize() do
     table.insert(obj.register_keys, i)
   end
-  
+
   for k,v in pairs(self) do obj[k] = v end
   obj.new = nil -- but not that one.
-  
+
   return obj
 end
 
@@ -895,7 +906,7 @@ end
 
 function Model:apply(action)
   action:applyToModel(self)
-  
+
   self.completes[action.id] = true
 end
 
@@ -920,7 +931,7 @@ local function pick_action(model)
       future_tasks = future_tasks + 1
     end
   end
-  
+
   if not (#ready > 0) then
     print("No valid leaf found - "..future_tasks)
     print("Blocked tasks:")
@@ -931,7 +942,7 @@ local function pick_action(model)
     end
     assert(false)
   end
-  
+
   local selected_action = nil
   local selected_action_cost = nil
   for _, poss in ipairs(ready) do
@@ -943,7 +954,7 @@ local function pick_action(model)
   -- selected_action = ready[1].action
   -- selected_action_time = ready[1].time_until
   assert(selected_action)
-  
+
   if dump then
     print("Pick: "..selected_action.label.." x"..selected_action.factor)
   end
@@ -955,7 +966,7 @@ print("Selecting actions.");
 local ordered_actions = {}
 local model = Model:new()
 
-while not all_actions_done(model) do 
+while not all_actions_done(model) do
   local action, time_until = pick_action(model)
   model:apply(action, time_until)
   table.insert(ordered_actions, action)

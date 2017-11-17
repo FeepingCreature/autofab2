@@ -25,7 +25,7 @@ end
 function plan.new(self, parent)
   local length = 1
   if parent then length = parent.length + 1 end
-  
+
   local obj = {
     id = plan_id,
     parent = parent,
@@ -33,7 +33,7 @@ function plan.new(self, parent)
     items = nil, -- name -> name, count, capacity
     length = length
   }
-  
+
   if not parent then
     obj.items = {}
     local chestnames = libchest.list_chests()
@@ -47,14 +47,14 @@ function plan.new(self, parent)
       end
     end
   end
-  
+
   plan_id = plan_id + 1
-    
+
   -- for k,v in pairs(self) do obj[k] = v end
   -- obj.new = nil -- but not that one.
   setmetatable(obj, self.mt)
   obj.new = disabled
-  
+
   return obj
 end
 
@@ -77,7 +77,7 @@ function plan.recipe_masked(self, item, index)
   local key = item..":"..index
   -- cache risks oom, trade time for memory
   -- if not self.masked then self.masked = {} end
-  
+
   local obj = self
   while obj do
     if obj.masked and obj.masked[key] then
@@ -163,13 +163,13 @@ local function exec_store(self, chest, slot, count)
   else
     assert(self.capacity == 1) -- cannot be grouped
   end
-  
+
   local success, error = chest:store(slot, self.item_slot, self.name, count)
   if error then
     error = error .. " storing "..count.." "..self.name.." in "..slot
   end
   assert(success, error)
-  
+
   local newslot = ico.getStackInInternalSlot(self.item_slot)
   local newsize = 0
   if newslot then newsize = newslot.size end
@@ -255,19 +255,19 @@ function fetch.enact(self)
       local slot = chest.slots[i]
       if slot.name == self.name then
         local grab_here = math.min(count_left, slot.count)
-        
+
         local oldslot = ico.getStackInInternalSlot(self.item_slot)
         local oldslot_size = 0
         if oldslot then oldslot_size = oldslot.size end
-        
-        assert(chest:grab(i, self.item_slot, self.name, grab_here))
-        
+
+        assert(chest:grab(i, self.item_slot, self.name, grab_here), "tried to grab "..grab_here.." "..self.name.." from chest, but failed")
+
         local newslot = ico.getStackInInternalSlot(self.item_slot)
         local newslot_size = 0
         if newslot then newslot_size = newslot.size end
-        
+
         assert(newslot_size == oldslot_size + grab_here, "tried to grab "..grab_here.." from chest, but only got "..newslot_size.." from "..oldslot_size)
-        
+
         count_left = count_left - grab_here
         if count_left == 0 then
           return true
@@ -306,19 +306,19 @@ end
 
 function craft.enact(self)
   local ico = component.inventory_controller
-  
+
   local oldslot = ico.getStackInInternalSlot(self.item_slot)
   local oldslot_size = 0
   if oldslot then oldslot_size = oldslot.size end
-  
+
   local crafting = component.crafting
   robot.select(self.item_slot)
   assert(crafting.craft(self.count))
-  
+
   local newslot = ico.getStackInInternalSlot(self.item_slot)
   local newslot_size = 0
   if newslot then newslot_size = newslot.size end
-  
+
   assert(newslot_size == self.count, "crafting "..self.name.." failed: expected "..self.count..", got "..newslot_size)
   return true
 end
@@ -384,7 +384,7 @@ end
 
 function drop.enact(self)
   robot.select(self.item_slot)
-  
+
   local ico = component.inventory_controller
   local oldslot = ico.getStackInInternalSlot(self.item_slot)
   local oldslot_size = 0
@@ -393,24 +393,24 @@ function drop.enact(self)
     print("slot error: told to drop "..self.count.." from "..self.item_slot.." but only had "..oldslot_size)
     os.exit()
   end
-  
+
   libplace.go_to(self.location)
-  
+
   local dirmap = {forward=robot.drop, down=robot.dropDown}
   local dropfn = dirmap[self.direction]
-  
+
   if not dropfn(self.count) then
     print("error: cannot drop "..self.count.." from "..self.item_slot)
     os.exit()
   end
   -- assert(robot.dropDown(self.count))
-  
+
   local newslot = ico.getStackInInternalSlot(self.item_slot)
   local newslot_size = 0
   if newslot then newslot_size = newslot.size end
-  
+
   assert(newslot_size == oldslot_size - self.count, "only down to "..newslot_size.." dropping "..self.count.." from "..oldslot_size)
-  
+
   return true
 end
 
@@ -443,18 +443,18 @@ end
 
 function suck.enact(self)
   if not self.count then return true end
-  
+
   libplace.go_to(self.location)
   local ico = component.inventory_controller
   local oldslot = ico.getStackInInternalSlot(self.item_slot)
   local oldslot_size = 0
   if oldslot then oldslot_size = oldslot.size end
-  
+
   robot.select(self.item_slot)
-  
+
   local remaining = self.count
-  
-  while remaining > 0 do 
+
+  while remaining > 0 do
     if self.direction == "forward" then
       robot.suck(remaining)
     elseif self.direction == "up" then
@@ -462,17 +462,71 @@ function suck.enact(self)
     else
       assert(false, "unknown suck direction '"..self.direction.."'")
     end
-    
+
     local newslot = ico.getStackInInternalSlot(self.item_slot)
     local newslot_size = 0
     if newslot then newslot_size = newslot.size end
-    
+
     local items_gained = newslot_size - oldslot_size
     assert(items_gained <= self.count)
-    
+
     remaining = self.count - items_gained
   end
-  
+
+  return true
+end
+
+local use = {}
+libplan.use = use
+
+for k,v in pairs(libplan.plan) do use[k] = v end
+use.mt = { __index = use }
+
+function use.new(self, parent, item_slot, location, direction, name, count)
+  local obj = libplan.plan.new(self, parent)
+  obj.type = "use"
+  obj.item_slot = item_slot
+  obj.location = location
+  obj.direction = direction
+  obj.name = name
+  obj.count = count
+  obj:rebuild()
+  return obj
+end
+
+function use.dump(self, marker)
+  print(marker.."Use "..self.count.." "..self.name.." to "..self.item_slot.." at "..self.location)
+end
+
+function use.rebuild(self, depth)
+  if depth and depth > 1 then self.parent:rebuild(depth - 1) end
+  self:reset()
+end
+
+function use.enact(self)
+  local ico = component.inventory_controller
+
+  assert(self.count == 1)
+
+  libplace.go_to(self.location)
+
+  local oldslot = ico.getStackInInternalSlot(self.item_slot)
+  local oldslot_size = 0
+  if oldslot then oldslot_size = oldslot.size end
+
+  robot.select(self.item_slot)
+  ico.equip() -- swap into tool slot
+  if self.direction == "forward" then
+    assert(robot.use(sides.front))
+  elseif self.direction == "up" then
+    assert(robot.useUp(sides.front))
+  elseif self.direction == "down" then
+    assert(robot.useDown(sides.front))
+  else
+    assert(false, "unknown use direction '"..self.direction.."'")
+  end
+  ico.equip() -- swap back
+
   return true
 end
 
@@ -515,6 +569,11 @@ end
 function libplan.action_suck(plan, direction, slot, location, name, count)
   assert(direction == "forward" or direction == "up")
   return libplan.suck:new(plan, slot, location, direction, name, count)
+end
+
+function libplan.action_use(plan, direction, slot, location, name, count)
+  assert(direction == "forward" or direction == "up" or direction == "down")
+  return libplan.use:new(plan, slot, location, direction, name, count)
 end
 
 function libplan.plan_to_list(plan)
@@ -603,14 +662,14 @@ function libplan.opt1(plan)
       return libplan.opt1(new_plan)
     end
   end
-  
+
   -- helper for the above, swap fetch and move if easy
   if plan.type == "fetch" and plan.parent.type == "move"
     and not(plan.parent.from_slot == plan.item_slot or plan.parent.to_slot == plan.item_slot)
   then
     return swap(plan)
   end
-  
+
   -- move to direct placement
   if plan.type == "move" then
     if plan.parent.type == "fetch" and plan.parent.item_slot == plan.from_slot and plan.parent.count == plan.count then
@@ -635,7 +694,7 @@ function libplan.opt1(plan)
       return libplan.opt1(plan)
     end
   end
-  
+
   -- try to find a matching store parent
   if plan.type == "fetch" then
     local match = plan.parent
@@ -664,7 +723,7 @@ function libplan.opt1(plan)
             local items_still_fetched = math.max(0, plan.count - match.count)
             local original_match_count = match.count
             local original_plan_count = plan.count
-            
+
             -- matches us, cut match out
             local new_plan
             if items_still_stored == 0 then
@@ -674,7 +733,7 @@ function libplan.opt1(plan)
               match.count = items_still_stored
             end
             pred.parent = new_plan
-            
+
             local res
             if items_still_fetched == 0 then
               res = plan.parent
@@ -682,12 +741,12 @@ function libplan.opt1(plan)
               plan.count = items_still_fetched
               res = plan
             end
-            
+
             if not (plan.item_slot == match.item_slot) then
               res = libplan.move:new(res, match.item_slot, plan.item_slot, math.min(original_plan_count, original_match_count))
               res = libplan.opt1(res)
             end
-            
+
             res:rebuild(i + 3)
             return libplan.opt1(res)
           end
@@ -701,13 +760,13 @@ function libplan.opt1(plan)
       i = i + 1
     end
   end
-  
+
   return plan
 end
 
 function libplan.move_late_fusion(plan, fn)
   if not plan.parent then return plan end
-    
+
   -- sort moves to enable combining
   if plan.parent.type == "move" and plan.type == "move"
     and not (plan.parent.to_slot == plan.from_slot)
@@ -715,7 +774,7 @@ function libplan.move_late_fusion(plan, fn)
   then
     return swap(plan, fn)
   end
-  
+
   if plan.parent.type == "move" and plan.type == "move"
     and plan.parent.from_slot == plan.from_slot
     and plan.parent.to_slot == plan.to_slot
@@ -768,7 +827,7 @@ end
 
 function libplan.machines_reorder(plan, fn)
   if not plan.parent then return plan end
-  
+
   -- suck as late as you can
   if plan.parent.type == "suck" and plan.type == "store"
     and not (plan.parent.item_slot == plan.item_slot)
@@ -779,7 +838,7 @@ function libplan.machines_reorder(plan, fn)
   if plan.parent.type == "suck" and plan.type == "craft"
     and not in_craft_grid(plan.parent.item_slot)
   then return swap(plan, fn) end
-  
+
   -- drop as early as you can
   if plan.parent.type == "store" and plan.type == "drop"
   then return swap(plan, fn) end
@@ -794,13 +853,13 @@ function libplan.machines_reorder(plan, fn)
   if plan.parent.type == "move" and plan.type == "drop"
     and not (plan.parent.to_slot == plan.item_slot)
   then return swap(plan, fn) end
-  
+
   -- interleave machine usage
   if plan.parent.type == "suck" and plan.type == "drop"
     and not same_machine(plan.parent.location, plan.location)
     and not (plan.parent.item_slot == plan.item_slot)
   then return swap(plan, fn) end
-  
+
   -- suck directly.
   if plan.parent.type == "suck" and plan.type == "move"
     and plan.parent.item_slot == plan.from_slot
@@ -818,7 +877,7 @@ function libplan.machines_reorder(plan, fn)
     newplan = libplan.suck:new(newplan, plan.to_slot, suck.location, suck.direction, suck.name, plan.count)
     return fn(newplan, fn)
   end
-  
+
   -- why?? not sure.
   if plan.parent.type == "move" and plan.type == "move"
     and plan.parent.to_slot == plan.from_slot
@@ -830,13 +889,13 @@ function libplan.machines_reorder(plan, fn)
     newplan = libplan.opt1(newplan)
     return newplan
   end
-  
+
   return plan
 end
 
 function libplan.unused_opts(plan)
   -- TODO evaluate which of those still make sense
-  
+
   -- move stores back as far as possible
   if plan.parent.type == "store" and plan.type == "move"
     -- and not (plan.parent.item_slot == plan.from_slot) -- this case is fine because by def we have enough in either case
@@ -844,7 +903,7 @@ function libplan.unused_opts(plan)
   then
     return swap(plan)
   end
-  
+
   if plan.parent.type == "store" and plan.type == "craft"
     -- store from a non-craft slot, which is not the one we craft into
     and not in_craft_grid(plan.parent.item_slot)
@@ -852,27 +911,27 @@ function libplan.unused_opts(plan)
   then
     return swap(plan)
   end
-  
+
   if plan.parent.type == "store" and plan.type == "suck"
     and not (plan.parent.item_slot == plan.item_slot)
   then
     return swap(plan)
   end
-  
+
   if plan.parent.type == "store" and plan.type == "fetch"
     and not (plan.parent.item_slot == plan.item_slot)
     and not (plan.parent.name == plan.name)
   then
     return swap(plan)
   end
-  
+
   if plan.parent.type == "move" and plan.type == "fetch"
     and (plan.parent.to_slot == plan.item_slot) -- safe to swap, order doesn't matter
   then
     return swap(plan)
   end
-  
-  
+
+
   if plan.parent and plan.parent.parent
     and plan.parent.parent.type == "store" and plan.parent.type == "store" and plan.type == "move"
     and plan.parent.item_slot == plan.to_slot
@@ -891,7 +950,7 @@ function libplan.unused_opts(plan)
     A = libplan.opt1(A)
     return A
   end
-  
+
   -- fuse move-drop into drop
   if plan.parent
     and plan.parent.type == "move" and plan.type == "drop"
@@ -904,7 +963,7 @@ function libplan.unused_opts(plan)
     plan = libplan.opt1(plan)
     return plan
   end
-  
+
   return plan
 end
 
